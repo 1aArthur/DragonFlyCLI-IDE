@@ -1,0 +1,290 @@
+package com.example.ui.screens.files
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.domain.model.FileItem
+import com.example.ui.components.GlassCard
+import com.example.ui.theme.*
+
+@Composable
+fun FileManagerScreen(
+    viewModel: FileManagerViewModel,
+    onOpenFileInEditor: (String) -> Unit,
+    onRunFileInTerminal: (String) -> Unit,
+    onAskAiAboutFile: (String) -> Unit
+) {
+    val currentPath by viewModel.currentPath.collectAsState()
+    val files by viewModel.files.collectAsState()
+    val bookmarks by viewModel.bookmarks.collectAsState()
+
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var isCreatingFolder by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+            .padding(8.dp)
+    ) {
+        // Path Header
+        GlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    IconButton(onClick = { viewModel.navigateUp() }) {
+                        Icon(Icons.Default.ArrowUpward, "Subir Diretório", tint = GlowCyan)
+                    }
+                    Text(
+                        text = currentPath,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        maxLines = 1
+                    )
+                }
+
+                Row {
+                    IconButton(onClick = {
+                        isCreatingFolder = false
+                        showCreateDialog = true
+                    }) {
+                        Icon(Icons.Default.NoteAdd, "Novo Arquivo", tint = GlowCyan)
+                    }
+                    IconButton(onClick = {
+                        isCreatingFolder = true
+                        showCreateDialog = true
+                    }) {
+                        Icon(Icons.Default.CreateNewFolder, "Nova Pasta", tint = ElectricBlue)
+                    }
+                }
+            }
+        }
+
+        // Bookmark row if available
+        if (bookmarks.isNotEmpty()) {
+            Text("Favoritos", fontSize = 11.sp, color = GlowCyan, modifier = Modifier.padding(bottom = 4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                bookmarks.forEach { bm ->
+                    Surface(
+                        color = DarkSurface,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder),
+                        modifier = Modifier.clickable { viewModel.loadDirectory(bm.filePath) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Star, null, tint = TerminalYellow, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(bm.alias, fontSize = 11.sp, color = TextPrimary)
+                        }
+                    }
+                }
+            }
+        }
+
+        // File List
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(files) { file ->
+                FileListItem(
+                    file = file,
+                    onItemClick = {
+                        if (file.isDirectory) {
+                            viewModel.loadDirectory(file.path)
+                        } else {
+                            onOpenFileInEditor(file.path)
+                        }
+                    },
+                    onDelete = { viewModel.deleteFile(file) },
+                    onBookmark = { viewModel.toggleBookmark(file) },
+                    onRunInTerminal = { onRunFileInTerminal("cat ${file.path}") },
+                    onAskAi = { onAskAiAboutFile("Analise o arquivo: ${file.path}") },
+                    onZip = { viewModel.zipDirectory(file) },
+                    onUnzip = { viewModel.unzipFile(file) }
+                )
+            }
+        }
+    }
+
+    // Modal Create File / Folder Dialog
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text(if (isCreatingFolder) "Nova Pasta" else "Novo Arquivo", color = TextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = newItemName,
+                    onValueChange = { newItemName = it },
+                    placeholder = { Text(if (isCreatingFolder) "Nome da pasta" else "ex: script.py", color = TextMuted) },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newItemName.isNotBlank()) {
+                            if (isCreatingFolder) {
+                                viewModel.createNewFolder(newItemName)
+                            } else {
+                                viewModel.createNewFile(newItemName)
+                            }
+                            newItemName = ""
+                            showCreateDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+                ) {
+                    Text("Criar", color = BlackHoleBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
+}
+
+@Composable
+fun FileListItem(
+    file: FileItem,
+    onItemClick: () -> Unit,
+    onDelete: () -> Unit,
+    onBookmark: () -> Unit,
+    onRunInTerminal: () -> Unit,
+    onAskAi: () -> Unit,
+    onZip: () -> Unit,
+    onUnzip: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onItemClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile,
+                    contentDescription = null,
+                    tint = if (file.isDirectory) GlowCyan else ElectricBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(file.name, fontSize = 13.sp, color = TextPrimary, fontFamily = FontFamily.Monospace)
+                    if (!file.isDirectory) {
+                        Text("${file.sizeBytes} bytes", fontSize = 10.sp, color = TextMuted)
+                    }
+                }
+            }
+
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.MoreVert, "Opções", tint = TextMuted)
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Favoritar", color = TextPrimary) },
+                        onClick = {
+                            onBookmark()
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Analisar com IA", color = TextPrimary) },
+                        onClick = {
+                            onAskAi()
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Visualizar no Terminal", color = TextPrimary) },
+                        onClick = {
+                            onRunInTerminal()
+                            showMenu = false
+                        }
+                    )
+                    if (file.isDirectory) {
+                        DropdownMenuItem(
+                            text = { Text("Compactar ZIP", color = TextPrimary) },
+                            onClick = {
+                                onZip()
+                                showMenu = false
+                            }
+                        )
+                    }
+                    if (file.name.endsWith(".zip")) {
+                        DropdownMenuItem(
+                            text = { Text("Extrair ZIP", color = TextPrimary) },
+                            onClick = {
+                                onUnzip()
+                                showMenu = false
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Deletar", color = TerminalRed) },
+                        onClick = {
+                            onDelete()
+                            showMenu = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}

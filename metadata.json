@@ -1,0 +1,6 @@
+{
+  "name": "DragonflyCLI-IDE",
+  "description": "The ultimate AI Terminal, Code Editor, File Manager, and Autonomous Agent IDE for Android.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
