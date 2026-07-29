@@ -120,25 +120,79 @@ fun ChatScreen(
                 IconButton(onClick = { showModelMenu = true }) {
                     Icon(Icons.Default.Tune, "Modelo", tint = CyberPurple)
                 }
-                DropdownMenu(
-                    expanded = showModelMenu,
-                    onDismissRequest = { showModelMenu = false }
-                ) {
-                    availableModels.forEach { model ->
-                        DropdownMenuItem(
-                            text = { Text(model.name, color = TextPrimary) },
-                            onClick = {
-                                viewModel.setModel(model.id)
-                                showModelMenu = false
-                            }
-                        )
-                    }
-                }
 
                 IconButton(onClick = { viewModel.createNewConversation() }) {
                     Icon(Icons.Default.AddComment, "Nova Conversa", tint = GlowCyan)
                 }
             }
+        }
+
+        // Model Picker Dialog Modal
+        if (showModelMenu) {
+            var customModelInput by remember { mutableStateOf(selectedModel) }
+
+            AlertDialog(
+                onDismissRequest = { showModelMenu = false },
+                title = { Text("Escolher Modelo (${selectedProvider.displayName})", color = TextPrimary, fontSize = 16.sp) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Selecione um modelo pré-definido ou digite um identificador personalizado:", fontSize = 11.sp, color = TextMuted)
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .heightIn(max = 200.dp)
+                                .fillMaxWidth()
+                        ) {
+                            items(availableModels) { model ->
+                                val isSelected = model.id == selectedModel
+                                GlassCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clickable {
+                                            viewModel.setModel(model.id)
+                                            showModelMenu = false
+                                        },
+                                    backgroundColor = if (isSelected) Color(0xFF1E293B) else DarkSurface,
+                                    borderColor = if (isSelected) GlowCyan else DarkCardBorder
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(model.name, fontSize = 13.sp, color = if (isSelected) GlowCyan else TextPrimary)
+                                        Text(model.id, fontSize = 10.sp, color = TextMuted)
+                                    }
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = customModelInput,
+                            onValueChange = { customModelInput = it },
+                            label = { Text("Nome do Modelo Personalizado", color = TextMuted) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (customModelInput.isNotBlank()) {
+                                viewModel.setModel(customModelInput.trim())
+                            }
+                            showModelMenu = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+                    ) {
+                        Text("Aplicar Modelo", color = BlackHoleBackground)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showModelMenu = false }) {
+                        Text("Cancelar", color = TextMuted)
+                    }
+                },
+                containerColor = DarkSurface
+            )
         }
 
         // Drawer Modal Dialog for Conversations

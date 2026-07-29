@@ -2,14 +2,19 @@ package com.example.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.db.entities.ApiConfigEntity
 import com.example.data.network.AiApiClient
 import com.example.data.network.AiRequestOptions
 import com.example.data.repository.ApiConfigRepository
+import com.example.domain.model.AiModel
 import com.example.domain.model.AiProvider
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
@@ -40,6 +45,12 @@ class SettingsViewModel(
     private val _saveStatus = MutableStateFlow("")
     val saveStatus: StateFlow<String> = _saveStatus.asStateFlow()
 
+    val availableModels: StateFlow<List<AiModel>> = _selectedProvider.map { provider ->
+        AiModel.getDefaultModels().filter { it.provider == provider }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private var autoSaveJob: Job? = null
+
     init {
         loadConfigForProvider(AiProvider.GEMINI)
     }
@@ -62,27 +73,67 @@ class SettingsViewModel(
         }
     }
 
-    fun setApiKey(value: String) { _apiKey.value = value }
-    fun setBaseUrl(value: String) { _baseUrl.value = value }
-    fun setModelName(value: String) { _modelName.value = value }
-    fun setTemperature(value: Float) { _temperature.value = value }
-    fun setTopP(value: Float) { _topP.value = value }
-    fun setMaxTokens(value: Int) { _maxTokens.value = value }
+    fun setApiKey(value: String) {
+        _apiKey.value = value
+        scheduleAutoSave()
+    }
+
+    fun setBaseUrl(value: String) {
+        _baseUrl.value = value
+        scheduleAutoSave()
+    }
+
+    fun setModelName(value: String) {
+        _modelName.value = value
+        scheduleAutoSave()
+    }
+
+    fun setTemperature(value: Float) {
+        _temperature.value = value
+        scheduleAutoSave()
+    }
+
+    fun setTopP(value: Float) {
+        _topP.value = value
+        scheduleAutoSave()
+    }
+
+    fun setMaxTokens(value: Int) {
+        _maxTokens.value = value
+        scheduleAutoSave()
+    }
+
+    private fun scheduleAutoSave() {
+        autoSaveJob?.cancel()
+        autoSaveJob = viewModelScope.launch {
+            delay(600)
+            persistConfig(isAuto = true)
+        }
+    }
 
     fun saveConfig() {
+        autoSaveJob?.cancel()
         viewModelScope.launch {
-            val provider = _selectedProvider.value
-            apiConfigRepository.saveApiConfig(
-                provider = provider,
-                apiKey = _apiKey.value,
-                baseUrl = _baseUrl.value,
-                defaultModel = _modelName.value,
-                temperature = _temperature.value,
-                topP = _topP.value,
-                maxTokens = _maxTokens.value,
-                timeoutSec = 30
-            )
-            _saveStatus.value = "Configurações para ${provider.displayName} salvas com criptografia Keystore!"
+            persistConfig(isAuto = false)
+        }
+    }
+
+    private suspend fun persistConfig(isAuto: Boolean) {
+        val provider = _selectedProvider.value
+        apiConfigRepository.saveApiConfig(
+            provider = provider,
+            apiKey = _apiKey.value,
+            baseUrl = _baseUrl.value,
+            defaultModel = _modelName.value,
+            temperature = _temperature.value,
+            topP = _topP.value,
+            maxTokens = _maxTokens.value,
+            timeoutSec = 30
+        )
+        _saveStatus.value = if (isAuto) {
+            "✔ Alterações salvas automaticamente no Keystore (${provider.displayName})"
+        } else {
+            "✔ Configurações salvas no Keystore para ${provider.displayName}!"
         }
     }
 

@@ -93,4 +93,10 @@ class ChatRepository(
         chatDao.deleteMessagesForConversation(conversationId)
         chatDao.deleteConversationById(conversationId)
     }
+
+    suspend fun updateConversation(conversation: ConversationEntity) {
+        chatDao.insertConversation(conversation)
+    }
+
+    suspend fun getApiConfig(provider: AiProvider) = apiConfigRepository.getApiConfig(provider)
 }

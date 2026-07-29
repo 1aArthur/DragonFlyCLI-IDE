@@ -1,21 +1,22 @@
 package com.example.ui.screens.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -25,6 +26,7 @@ import com.example.ui.components.BlackHoleAnimationController
 import com.example.ui.components.FontManagementController
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.*
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,9 +38,11 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     val temperature by viewModel.temperature.collectAsState()
     val topP by viewModel.topP.collectAsState()
     val saveStatus by viewModel.saveStatus.collectAsState()
+    val availableModels by viewModel.availableModels.collectAsState()
 
     var showApiKey by remember { mutableStateOf(false) }
     var showProviderPicker by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
@@ -59,48 +63,100 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         // Monospaced Font Management Controller for Editor & Terminal
         FontManagementController()
 
-        // Provider Selector Card
+        // Provider & Model Selector Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column {
-                    Text("Provedor Selecionado", fontSize = 11.sp, color = TextMuted)
-                    Text(selectedProvider.displayName, fontSize = 15.sp, color = GlowCyan, style = MaterialTheme.typography.titleLarge)
-                }
-
-                Box {
-                    Button(
-                        onClick = { showProviderPicker = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, GlowCyan)
-                    ) {
-                        Text("Trocar Provedor", color = GlowCyan, fontSize = 12.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Provedor Selecionado", fontSize = 11.sp, color = TextMuted)
+                        Text(selectedProvider.displayName, fontSize = 15.sp, color = GlowCyan, fontWeight = FontWeight.Bold)
                     }
 
-                    DropdownMenu(
-                        expanded = showProviderPicker,
-                        onDismissRequest = { showProviderPicker = false }
-                    ) {
-                        AiProvider.values().forEach { provider ->
-                            DropdownMenuItem(
-                                text = { Text(provider.displayName, color = TextPrimary) },
-                                onClick = {
-                                    viewModel.selectProvider(provider)
-                                    showProviderPicker = false
-                                }
+                    Box {
+                        Button(
+                            onClick = { showProviderPicker = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
+                            border = BorderStroke(1.dp, GlowCyan)
+                        ) {
+                            Text("Trocar Provedor", color = GlowCyan, fontSize = 12.sp)
+                        }
+
+                        DropdownMenu(
+                            expanded = showProviderPicker,
+                            onDismissRequest = { showProviderPicker = false }
+                        ) {
+                            AiProvider.values().forEach { provider ->
+                                DropdownMenuItem(
+                                    text = { Text(provider.displayName, color = TextPrimary) },
+                                    onClick = {
+                                        viewModel.selectProvider(provider)
+                                        showProviderPicker = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Divider(color = DarkCardBorder)
+
+                // Fast Model Pickers for Selected Provider
+                Text("Modelos Pré-configurados (${selectedProvider.displayName}):", fontSize = 11.sp, color = TextMuted)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (availableModels.isNotEmpty()) {
+                        availableModels.take(3).forEach { model ->
+                            val isSelected = model.id == modelName
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setModelName(model.id) },
+                                label = { Text(model.name, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = GlowCyan,
+                                    selectedLabelColor = BlackHoleBackground,
+                                    containerColor = DarkSurface,
+                                    labelColor = TextPrimary
+                                )
                             )
+                        }
+                    }
+
+                    Box {
+                        IconButton(onClick = { showModelPicker = true }) {
+                            Icon(Icons.Default.Tune, "Mais Modelos", tint = CyberPurple)
+                        }
+
+                        DropdownMenu(
+                            expanded = showModelPicker,
+                            onDismissRequest = { showModelPicker = false }
+                        ) {
+                            availableModels.forEach { model ->
+                                DropdownMenuItem(
+                                    text = { Text("${model.name} (${model.id})", color = TextPrimary, fontSize = 12.sp) },
+                                    onClick = {
+                                        viewModel.setModelName(model.id)
+                                        showModelPicker = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Credentials & URL Form Card
+        // Credentials & Model Form Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(12.dp),
@@ -137,7 +193,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 OutlinedTextField(
                     value = modelName,
                     onValueChange = { viewModel.setModelName(it) },
-                    label = { Text("Nome do Modelo Padrão", color = TextMuted) },
+                    label = { Text("Nome do Modelo (ID)", color = TextMuted) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
                 )
@@ -152,7 +208,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             ) {
                 Text("Parâmetros do Modelo", fontSize = 13.sp, color = ElectricBlue)
 
-                Text("Temperatura: String.format(\"%.2f\", $temperature)", fontSize = 12.sp, color = TextPrimary)
+                Text("Temperatura: ${String.format(Locale.US, "%.2f", temperature)}", fontSize = 12.sp, color = TextPrimary)
                 Slider(
                     value = temperature,
                     onValueChange = { viewModel.setTemperature(it) },
@@ -160,7 +216,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     colors = SliderDefaults.colors(thumbColor = GlowCyan, activeTrackColor = GlowCyan)
                 )
 
-                Text("Top P: String.format(\"%.2f\", $topP)", fontSize = 12.sp, color = TextPrimary)
+                Text("Top P: ${String.format(Locale.US, "%.2f", topP)}", fontSize = 12.sp, color = TextPrimary)
                 Slider(
                     value = topP,
                     onValueChange = { viewModel.setTopP(it) },
@@ -182,7 +238,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 onClick = { viewModel.testConnection() },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, TerminalYellow)
+                border = BorderStroke(1.dp, TerminalYellow)
             ) {
                 Text("Testar Conexão", color = TerminalYellow, fontSize = 12.sp)
             }
