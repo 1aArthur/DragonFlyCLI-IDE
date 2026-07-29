@@ -2,6 +2,8 @@ package com.example.ui.screens.git
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.GitRemoteKeystoreCard
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.*
 
@@ -22,21 +25,46 @@ fun GitScreen(
     var commitMessage by remember { mutableStateOf("") }
     var cloneUrl by remember { mutableStateOf("") }
     var showCloneModal by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
+            .verticalScroll(scrollState)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("Gerenciador Git", style = MaterialTheme.typography.titleLarge, color = GlowCyan)
-        Text("Controle de versão diretamente no aplicativo.", fontSize = 12.sp, color = TextSecondary)
+        Text("Controle de versão e gestão de repositórios remotos com Android Keystore.", fontSize = 12.sp, color = TextSecondary)
+
+        // Git Remote Repositories & Keystore Credentials Card
+        GitRemoteKeystoreCard(
+            onPush = { remote, branch ->
+                viewModel.push(remote, branch)
+                onOpenTerminal()
+            },
+            onPull = { remote, branch ->
+                viewModel.pull(remote, branch)
+                onOpenTerminal()
+            },
+            onFetch = { remote ->
+                viewModel.fetch(remote)
+                onOpenTerminal()
+            },
+            onAddRemote = { name, url ->
+                viewModel.addRemote(name, url)
+                onOpenTerminal()
+            },
+            onSyncCredentials = { username, token ->
+                viewModel.syncKeystoreCredentials(username, token)
+            }
+        )
 
         // Git Status Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("Ações Rápidas", fontSize = 13.sp, color = GlowCyan)
+                Text("Ações Rápidas de Repositório", fontSize = 13.sp, color = GlowCyan)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -101,7 +129,7 @@ fun GitScreen(
         // Commit Section
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("Commit & Push", fontSize = 13.sp, color = ElectricBlue)
+                Text("Commit Local", fontSize = 13.sp, color = ElectricBlue)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
@@ -132,40 +160,6 @@ fun GitScreen(
                     ) {
                         Text("Stage & Commit", color = BlackHoleBackground, fontSize = 11.sp)
                     }
-
-                    Button(
-                        onClick = {
-                            viewModel.push()
-                            onOpenTerminal()
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
-                    ) {
-                        Text("Git Push", color = TextPrimary, fontSize = 11.sp)
-                    }
-                }
-            }
-        }
-
-        // Pull & Sync
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Sincronizar Repositório Remoto", fontSize = 12.sp, color = TextPrimary)
-                Button(
-                    onClick = {
-                        viewModel.pull()
-                        onOpenTerminal()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder)
-                ) {
-                    Text("Git Pull", color = TerminalGreen, fontSize = 11.sp)
                 }
             }
         }
@@ -208,3 +202,4 @@ fun GitScreen(
         )
     }
 }
+

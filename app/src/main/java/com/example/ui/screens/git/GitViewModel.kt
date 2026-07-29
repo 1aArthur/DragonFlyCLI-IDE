@@ -23,12 +23,28 @@ class GitViewModel(private val gitHelper: GitHelper) : ViewModel() {
         viewModelScope.launch { gitHelper.commit(msg) }
     }
 
-    fun push() {
-        viewModelScope.launch { gitHelper.push() }
+    fun push(remote: String = "origin", branch: String = "main") {
+        viewModelScope.launch { gitHelper.push(remote, branch) }
     }
 
-    fun pull() {
-        viewModelScope.launch { gitHelper.pull() }
+    fun pull(remote: String = "origin", branch: String = "main") {
+        viewModelScope.launch { gitHelper.pull(remote, branch) }
+    }
+
+    fun fetch(remote: String = "origin") {
+        viewModelScope.launch { gitHelper.fetch(remote) }
+    }
+
+    fun addRemote(name: String, url: String) {
+        viewModelScope.launch { gitHelper.addRemote(name, url) }
+    }
+
+    fun listRemotes() {
+        viewModelScope.launch { gitHelper.listRemotes() }
+    }
+
+    fun syncKeystoreCredentials(username: String, token: String) {
+        viewModelScope.launch { gitHelper.configureKeystoreCredentials(username, token) }
     }
 
     fun log() {
@@ -43,3 +59,4 @@ class GitViewModel(private val gitHelper: GitHelper) : ViewModel() {
         viewModelScope.launch { gitHelper.listBranches() }
     }
 }
+

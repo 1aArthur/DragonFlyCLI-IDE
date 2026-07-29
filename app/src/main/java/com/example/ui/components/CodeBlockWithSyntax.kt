@@ -40,6 +40,11 @@ fun CodeBlockWithSyntax(
 ) {
     val haptic = rememberHapticFeedback()
     val context = LocalContext.current
+    val fontState by FontController.state.collectAsState()
+    val codeFontFamily = fontState.selectedEditorFont.fontFamily
+    val codeFontSize = fontState.editorFontSizeSp.sp
+    val codeLineHeight = (fontState.editorFontSizeSp * fontState.lineSpacingMultiplier).sp
+
     val highlightedText = remember(code, language) {
         SyntaxHighlighter.highlight(code, language)
     }
@@ -134,10 +139,10 @@ fun CodeBlockWithSyntax(
                     lines.indices.forEach { idx ->
                         Text(
                             text = (idx + 1).toString(),
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontSize = codeFontSize,
+                            fontFamily = codeFontFamily,
                             color = TextMuted,
-                            lineHeight = 16.sp
+                            lineHeight = codeLineHeight
                         )
                     }
                 }
@@ -149,9 +154,9 @@ fun CodeBlockWithSyntax(
                 ) {
                     Text(
                         text = highlightedText,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp,
+                        fontSize = codeFontSize,
+                        fontFamily = codeFontFamily,
+                        lineHeight = codeLineHeight,
                         color = TextPrimary
                     )
                 }

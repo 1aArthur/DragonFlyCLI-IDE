@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.AiProvider
 import com.example.ui.components.BlackHoleAnimationController
+import com.example.ui.components.FontManagementController
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.*
 
@@ -54,6 +55,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
         // Shader & Animation Background Controller with Live Preview
         BlackHoleAnimationController()
+
+        // Monospaced Font Management Controller for Editor & Terminal
+        FontManagementController()
 
         // Provider Selector Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {

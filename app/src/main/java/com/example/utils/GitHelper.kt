@@ -19,12 +19,33 @@ class GitHelper(private val terminalManager: TerminalManager) {
         terminalManager.executeCommand("git commit -m \"$message\"")
     }
 
-    suspend fun push() {
-        terminalManager.executeCommand("git push")
+    suspend fun push(remote: String = "origin", branch: String = "main") {
+        terminalManager.executeCommand("git push $remote $branch")
     }
 
-    suspend fun pull() {
-        terminalManager.executeCommand("git pull")
+    suspend fun pull(remote: String = "origin", branch: String = "main") {
+        terminalManager.executeCommand("git pull $remote $branch")
+    }
+
+    suspend fun fetch(remote: String = "origin") {
+        terminalManager.executeCommand("git fetch $remote")
+    }
+
+    suspend fun addRemote(name: String, url: String) {
+        terminalManager.executeCommand("git remote add $name $url || git remote set-url $name $url")
+    }
+
+    suspend fun listRemotes() {
+        terminalManager.executeCommand("git remote -v")
+    }
+
+    suspend fun configureKeystoreCredentials(username: String, token: String) {
+        if (username.isNotBlank()) {
+            terminalManager.executeCommand("git config user.name \"$username\"")
+        }
+        if (token.isNotBlank()) {
+            terminalManager.executeCommand("git config credential.helper store")
+        }
     }
 
     suspend fun log() {
@@ -39,3 +60,4 @@ class GitHelper(private val terminalManager: TerminalManager) {
         terminalManager.executeCommand("git branch -a")
     }
 }
+

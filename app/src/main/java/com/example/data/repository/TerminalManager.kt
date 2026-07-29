@@ -92,17 +92,108 @@ class TerminalManager(
                 saveHistory(trimmed, 0)
                 return@withContext
             }
+            trimmed == "native-opt" || trimmed == "opt-status" -> {
+                val stats = com.example.utils.performance.NativePerformanceEngine.getMemoryStats()
+                val binFiles = File(context.filesDir, "bin").listFiles()?.joinToString { it.name } ?: "Nenhum"
+                val msg = """
+                    [Native Multi-Language Performance Engine v2.5]
+                    Status: ATIVO
+                    $stats
+                    Ferramentas Nativas em /bin: $binFiles
+                    Última renderização LRU: ${com.example.utils.performance.NativePerformanceEngine.lastExecutionTimeMs} ms
+                """.trimIndent()
+                appendLine(TerminalLine(msg, TerminalLine.LineType.SUCCESS))
+                saveHistory(trimmed, 0)
+                return@withContext
+            }
+            trimmed == "benchmark" -> {
+                appendLine(TerminalLine("⚡ Executando Benchmark do Motor Nativo C/Python/Shell...", TerminalLine.LineType.SYSTEM))
+                val start = System.nanoTime()
+                val scanResults = com.example.utils.performance.NativePerformanceEngine.performFastWorkspaceScan(currentDirectory, "")
+                val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                val stats = com.example.utils.performance.NativePerformanceEngine.getMemoryStats()
+                val resMsg = """
+                    ✔ Benchmark concluído em ${String.format("%.2f", elapsed)} ms
+                    Arquivos varridos em alta velocidade: ${scanResults.size}
+                    $stats
+                """.trimIndent()
+                appendLine(TerminalLine(resMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(trimmed, 0)
+                return@withContext
+            }
+            trimmed.startsWith("cargo ") || trimmed == "cargo" || trimmed.startsWith("cargo-ndk") -> {
+                val output = com.example.utils.rust.RustCargoNdkEngine.handleCargoCommand(trimmed, currentDirectory)
+                appendLine(TerminalLine(output, TerminalLine.LineType.SUCCESS))
+                saveHistory(trimmed, 0)
+                return@withContext
+            }
+            trimmed.startsWith("wasm ") || trimmed == "wasm" -> {
+                val parts = trimmed.split("\\s+".toRegex())
+                val subCmd = parts.getOrNull(1) ?: "help"
+                val fileArg = parts.getOrNull(2) ?: "module.wasm"
+                val targetFile = File(currentDirectory, fileArg)
+
+                val outMsg = when (subCmd) {
+                    "inspect" -> com.example.utils.wasm.WasmRuntimeEngine.inspectWasmFile(targetFile)
+                    "run" -> com.example.utils.wasm.WasmRuntimeEngine.executeWasmModule(targetFile, parts.drop(3))
+                    "gen", "init" -> com.example.utils.wasm.WasmRuntimeEngine.generateSampleWasmModule(currentDirectory, fileArg)
+                    else -> """
+                        🔮 [WASM Runtime Engine] Options:
+                          wasm inspect <file.wasm> : Analyze WASM headers and imports/exports
+                          wasm run <file.wasm>     : Execute WebAssembly module in WASI environment
+                          wasm gen [module.wat]    : Generate WebAssembly text format sample module
+                        """.trimIndent()
+                }
+                appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(trimmed, 0)
+                return@withContext
+            }
+            trimmed.startsWith("lsp ") || trimmed == "lsp" -> {
+                val parts = trimmed.split("\\s+".toRegex())
+                val subCmd = parts.getOrNull(1) ?: "status"
+                val outMsg = when (subCmd) {
+                    "status" -> com.example.utils.lsp.LspServerBridge.getStatusSummary()
+                    "diag", "diagnostics" -> {
+                        val ktFiles = currentDirectory.walkTopDown().filter { it.extension in listOf("kt", "rs", "py", "c") }.take(5).toList()
+                        val diagLines = ktFiles.flatMap { f ->
+                            com.example.utils.lsp.LspServerBridge.getDiagnostics(f, f.readText()).map { "${f.name}:${it.line}:${it.character} [${it.severity}] ${it.message}" }
+                        }
+                        if (diagLines.isEmpty()) "✔ LSP Diagnostics: 0 errors, 0 warnings found." else diagLines.joinToString("\n")
+                    }
+                    else -> "LSP Commands: lsp status | lsp diag"
+                }
+                appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(trimmed, 0)
+                return@withContext
+            }
+            trimmed.startsWith("profile") || trimmed.startsWith("profiler") -> {
+                val parts = trimmed.split("\\s+".toRegex())
+                val subCmd = parts.getOrNull(1) ?: "report"
+                val outMsg = when (subCmd) {
+                    "start" -> com.example.utils.profiling.PerformanceProfiler.startProfiling()
+                    "stop" -> com.example.utils.profiling.PerformanceProfiler.stopProfiling().toFormattedString()
+                    else -> com.example.utils.profiling.PerformanceProfiler.getQuickReportSummary()
+                }
+                appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(trimmed, 0)
+                return@withContext
+            }
             trimmed == "help" -> {
                 val helpMsg = """
                     Available commands & shortcuts:
+                      cargo [subcmd] : Rust & Cargo-NDK cross-compilation engine (build, check, ndk, init)
+                      wasm [subcmd]  : WebAssembly runtime engine & disassembler (inspect, run, gen)
+                      lsp [subcmd]   : Language Server Protocol diagnostics & status (status, diag)
+                      profile        : Performance Profiling engine (start, stop, report)
                       cd <path>      : Change directory
                       ls [-la]       : List files in current directory
                       pwd            : Display current working path
                       cat <file>     : View file content
-                      echo <text>    : Print text
                       mkdir <dir>    : Create new folder
                       rm [-r] <file> : Remove file or directory
                       touch <file>   : Create empty file
+                      native-opt     : Visualizar estatísticas do motor nativo C/Python
+                      benchmark      : Executar teste de desempenho
                       termux:<cmd>   : Dispatch command directly to Termux:API
                       python / node  : Script execution interface
                       git <subcmd>   : Git repository operator

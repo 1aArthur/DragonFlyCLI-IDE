@@ -32,10 +32,15 @@ import com.example.utils.rememberHapticFeedback
 @Composable
 fun TerminalScreen(viewModel: TerminalViewModel) {
     val haptic = rememberHapticFeedback()
+    val fontState by FontController.state.collectAsState()
     val lines by viewModel.lines.collectAsState()
     val currentDir by viewModel.currentDir.collectAsState()
     val isRunning by viewModel.isRunning.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
+
+    val terminalFontFamily = fontState.selectedTerminalFont.fontFamily
+    val terminalFontSize = fontState.terminalFontSizeSp.sp
+    val terminalLineHeight = (fontState.terminalFontSizeSp * fontState.lineSpacingMultiplier).sp
 
     val isTermuxMode by viewModel.terminalManager.isTermuxMode.collectAsState()
     val termuxStatus by viewModel.terminalManager.termuxStatus.collectAsState()
@@ -154,10 +159,10 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
 
                     Text(
                         text = line.text,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
+                        fontFamily = terminalFontFamily,
+                        fontSize = terminalFontSize,
                         color = color,
-                        lineHeight = 16.sp
+                        lineHeight = terminalLineHeight
                     )
                 }
             }
@@ -182,8 +187,8 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                     ) {
                         Text(
                             text = sugg,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
+                            fontFamily = terminalFontFamily,
+                            fontSize = terminalFontSize,
                             color = GlowCyan,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
@@ -211,8 +216,8 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                 ) {
                     Text(
                         text = cmd,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
+                        fontFamily = terminalFontFamily,
+                        fontSize = terminalFontSize,
                         color = TextSecondary,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
@@ -231,7 +236,7 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                     .padding(horizontal = 8.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("$ ", fontFamily = FontFamily.Monospace, color = GlowCyan, fontSize = 14.sp)
+                Text("$ ", fontFamily = terminalFontFamily, color = GlowCyan, fontSize = terminalFontSize)
 
                 OutlinedTextField(
                     value = inputCommand,
@@ -240,13 +245,18 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                         inputCommand = it
                         viewModel.onInputChanged(it)
                     },
-                    placeholder = { Text("Digite o comando...", fontFamily = FontFamily.Monospace, color = TextMuted, fontSize = 12.sp) },
+                    placeholder = { Text("Digite o comando...", fontFamily = terminalFontFamily, color = TextMuted, fontSize = terminalFontSize) },
                     modifier = Modifier.weight(1f),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
+                    ),
+                    textStyle = LocalTextStyle.current.copy(
+                        fontFamily = terminalFontFamily,
+                        fontSize = terminalFontSize,
+                        lineHeight = terminalLineHeight
                     ),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),

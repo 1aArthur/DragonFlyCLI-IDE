@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import com.example.ui.theme.BlackHoleAnimationState
 import com.example.ui.theme.BlackHoleController
 
 @Composable
@@ -19,7 +18,7 @@ fun BlackHoleParticleSystem(
 
     Box(modifier = modifier.fillMaxSize()) {
         BlackHoleShaderCanvas(
-            state = configState.copy(particleCount = particleCount.coerceAtLeast(configState.particleCount)),
+            state = configState,
             modifier = Modifier.fillMaxSize()
         )
 

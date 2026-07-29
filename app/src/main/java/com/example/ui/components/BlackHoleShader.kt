@@ -26,38 +26,43 @@ import com.example.ui.theme.GlowCyan
 import com.example.ui.theme.TerminalGreen
 import kotlinx.coroutines.launch
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
  * High-performance primitive float array buffer for particle rendering.
- * Eliminates object allocations inside the Canvas draw loop.
+ * Zero-allocation inside the Canvas draw loop.
  */
 private class OptimizedParticleBuffer(val count: Int, primaryColorsArgb: IntArray) {
     val initialAngles = FloatArray(count)
     val distanceRatios = FloatArray(count)
-    val baseSpeeds = FloatArray(count)
+    val keplerSpeeds = FloatArray(count)
     val radii = FloatArray(count)
     val colorsArgb = IntArray(count)
     val baseAlphas = FloatArray(count)
-    val depthLayers = FloatArray(count) // Parallax depth layer (0.2f = deep space, 1.5f = foreground flare)
+    val depthLayers = FloatArray(count) // Depth layer for parallax and lensing (0.2f = deep space, 1.4f = foreground)
 
     init {
         val rand = Random(42)
         for (i in 0 until count) {
             initialAngles[i] = rand.nextFloat() * 2f * Math.PI.toFloat()
-            distanceRatios[i] = rand.nextFloat() * 0.92f + 0.08f
-            baseSpeeds[i] = (rand.nextFloat() * 0.012f + 0.003f) * if (rand.nextBoolean()) 1f else -1f
-            radii[i] = rand.nextFloat() * 2.8f + 0.8f
+            val distRatio = rand.nextFloat() * 0.90f + 0.10f
+            distanceRatios[i] = distRatio
+            
+            // Keplerian orbital velocity: closer particles orbit faster v ∝ 1 / sqrt(r)
+            val speedFactor = (1.0f / distRatio.toDouble().pow(0.5)).toFloat() * 0.008f
+            keplerSpeeds[i] = speedFactor * if (rand.nextBoolean()) 1f else -1f
+            
+            radii[i] = rand.nextFloat() * 2.6f + 0.8f
             colorsArgb[i] = primaryColorsArgb[rand.nextInt(primaryColorsArgb.size)]
             baseAlphas[i] = rand.nextFloat() * 0.7f + 0.3f
             
             // Assign depth layers based on distance ratio
-            val dist = distanceRatios[i]
             depthLayers[i] = when {
-                dist > 0.70f -> 0.35f + rand.nextFloat() * 0.25f // Background distant stars
-                dist > 0.30f -> 0.75f + rand.nextFloat() * 0.35f // Midground accretion disk
-                else -> 1.20f + rand.nextFloat() * 0.40f         // Foreground plasma flares
+                distRatio > 0.70f -> 0.35f + rand.nextFloat() * 0.25f // Deep space stars
+                distRatio > 0.30f -> 0.75f + rand.nextFloat() * 0.35f // Accretion disk stars
+                else -> 1.20f + rand.nextFloat() * 0.40f             // Foreground plasma flares
             }
         }
     }
@@ -77,15 +82,14 @@ fun BlackHoleShaderCanvas(
     val dragOffset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(currentIsAnimated) {
+        if (!currentIsAnimated) return@LaunchedEffect
         var lastNano = 0L
-        while (true) {
+        while (currentIsAnimated) {
             withInfiniteAnimationFrameNanos { nano ->
-                if (currentIsAnimated) {
-                    if (lastNano != 0L) {
-                        val deltaSec = (nano - lastNano) / 1_000_000_000f
-                        accumulatedTimeSec += deltaSec * currentRotationSpeed
-                    }
+                if (lastNano != 0L) {
+                    val deltaSec = (nano - lastNano) / 1_000_000_000f
+                    accumulatedTimeSec = (accumulatedTimeSec + deltaSec * currentRotationSpeed) % 3600f
                 }
                 lastNano = nano
             }
@@ -117,12 +121,15 @@ fun BlackHoleShaderCanvas(
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
+                        val currentX = dragOffset.value.x + dragAmount.x
+                        val currentY = dragOffset.value.y + dragAmount.y
                         coroutineScope.launch {
-                            val target = Offset(
-                                (dragOffset.value.x + dragAmount.x).coerceIn(-120f, 120f),
-                                (dragOffset.value.y + dragAmount.y).coerceIn(-120f, 120f)
+                            dragOffset.snapTo(
+                                Offset(
+                                    currentX.coerceIn(-120f, 120f),
+                                    currentY.coerceIn(-120f, 120f)
+                                )
                             )
-                            dragOffset.snapTo(target)
                         }
                     },
                     onDragEnd = {
@@ -152,13 +159,13 @@ fun BlackHoleShaderCanvas(
         val userDragX = dragOffset.value.x * pMultiplier
         val userDragY = dragOffset.value.y * pMultiplier
 
-        // 1. Singularity Core Base Center with Depth Layer 1.0f
+        // Singularity Core Center (Depth Layer 1.0f)
         val singularityCenter = Offset(
             baseCenter.x + userDragX * 1.0f + orbitalParallaxX * 1.0f,
             baseCenter.y + userDragY * 1.0f + orbitalParallaxY * 1.0f
         )
 
-        // Deep Space Background Center with Depth Layer 0.25f
+        // Deep Space Background Center (Depth Layer 0.25f)
         val backgroundCenter = Offset(
             baseCenter.x + userDragX * 0.25f + orbitalParallaxX * 0.25f,
             baseCenter.y + userDragY * 0.25f + orbitalParallaxY * 0.25f
@@ -167,23 +174,62 @@ fun BlackHoleShaderCanvas(
         // 1. Deep Space Void Background
         drawRect(color = BlackHoleBackground)
 
-        // 2. Gravitational Lens Outer Glow (Nebula Halo - Depth Layer 0.25f)
+        // 2. Gravitational Lens Outer Halo (Nebula Glow - Depth Layer 0.25f)
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    primaryColors[0].copy(alpha = (0.40f * state.glowIntensity).coerceIn(0f, 1f)),
-                    primaryColors[1].copy(alpha = (0.22f * state.glowIntensity).coerceIn(0f, 1f)),
-                    Color(0xFF0D0B1A).copy(alpha = 0.15f),
+                    primaryColors[0].copy(alpha = (0.42f * state.glowIntensity).coerceIn(0f, 1f)),
+                    primaryColors[1].copy(alpha = (0.24f * state.glowIntensity).coerceIn(0f, 1f)),
+                    Color(0xFF0D0B1A).copy(alpha = 0.18f),
                     Color.Transparent
                 ),
                 center = backgroundCenter,
-                radius = maxRadius * 0.88f
+                radius = maxRadius * 0.90f
             ),
-            radius = maxRadius * 0.88f,
+            radius = maxRadius * 0.90f,
             center = backgroundCenter
         )
 
-        // 3. Swirling Accretion Disk (Depth Layer 0.85f)
+        // 3. Orbiting Gravitational Particles & Stars (Keplerian physics loop)
+        val pCount = particleBuffer.count
+        for (i in 0 until pCount) {
+            val depth = particleBuffer.depthLayers[i]
+            val particleCenter = Offset(
+                baseCenter.x + userDragX * depth + orbitalParallaxX * depth,
+                baseCenter.y + userDragY * depth + orbitalParallaxY * depth
+            )
+
+            // Calculate angle using Keplerian speed for realistic gravity pull
+            val currentAngle = particleBuffer.initialAngles[i] + (particleBuffer.keplerSpeeds[i] * animTime * 30f)
+            val currentDistance = particleBuffer.distanceRatios[i] * maxRadius
+            val cosVal = cos(currentAngle.toDouble()).toFloat()
+            val sinVal = sin(currentAngle.toDouble()).toFloat()
+
+            var px = particleCenter.x + cosVal * currentDistance
+            var py = particleCenter.y + sinVal * currentDistance * 0.80f
+
+            // Gravitational lensing deflection near the event horizon
+            val distToCenter = kotlin.math.hypot(px - singularityCenter.x, py - singularityCenter.y)
+            if (distToCenter < blackHoleRadius * 2.2f && distToCenter > 1f) {
+                val pullFactor = (1.0f - (distToCenter / (blackHoleRadius * 2.2f))).coerceIn(0f, 0.45f)
+                px += (singularityCenter.x - px) * pullFactor
+                py += (singularityCenter.y - py) * pullFactor
+            }
+
+            val proximity = (1f - (currentDistance / maxRadius)).coerceIn(0.2f, 1f)
+            val twinkle = 0.75f + 0.25f * sin(animTime * 4f + particleBuffer.initialAngles[i])
+            val alpha = (particleBuffer.baseAlphas[i] * proximity * twinkle * state.glowIntensity).coerceIn(0.15f, 1.0f)
+
+            val colorArgb = particleBuffer.colorsArgb[i]
+
+            drawCircle(
+                color = Color(colorArgb).copy(alpha = alpha),
+                radius = particleBuffer.radii[i] * (0.8f + proximity * 0.6f),
+                center = Offset(px, py)
+            )
+        }
+
+        // 4. Swirling Accretion Disk (Depth Layer 0.85f)
         val diskCenter = Offset(
             baseCenter.x + userDragX * 0.85f + orbitalParallaxX * 0.85f,
             baseCenter.y + userDragY * 0.85f + orbitalParallaxY * 0.85f
@@ -208,7 +254,7 @@ fun BlackHoleShaderCanvas(
                 topLeft = Offset(diskCenter.x - diskWidth / 2f, diskCenter.y - diskHeight / 2f),
                 size = Size(diskWidth, diskHeight),
                 style = Stroke(width = blackHoleRadius * 0.45f),
-                alpha = (0.75f * state.glowIntensity).coerceIn(0f, 1f)
+                alpha = (0.78f * state.glowIntensity).coerceIn(0f, 1f)
             )
 
             // Inner Plasma Fire Ring
@@ -226,41 +272,11 @@ fun BlackHoleShaderCanvas(
                 topLeft = Offset(diskCenter.x - blackHoleRadius * 2.2f, diskCenter.y - blackHoleRadius * 0.85f),
                 size = Size(blackHoleRadius * 4.4f, blackHoleRadius * 1.7f),
                 style = Stroke(width = blackHoleRadius * 0.25f),
-                alpha = (0.90f * state.glowIntensity).coerceIn(0f, 1f)
+                alpha = (0.92f * state.glowIntensity).coerceIn(0f, 1f)
             )
         }
 
-        // 4. Orbiting Gravitational Particles & Stars (Zero-Allocation Loop using Primitive Buffer)
-        val pCount = particleBuffer.count
-        for (i in 0 until pCount) {
-            val depth = particleBuffer.depthLayers[i]
-            val particleCenter = Offset(
-                baseCenter.x + userDragX * depth + orbitalParallaxX * depth,
-                baseCenter.y + userDragY * depth + orbitalParallaxY * depth
-            )
-
-            val currentAngle = particleBuffer.initialAngles[i] + (particleBuffer.baseSpeeds[i] * animTime * 30f)
-            val currentDistance = particleBuffer.distanceRatios[i] * maxRadius
-            val cosVal = cos(currentAngle.toDouble()).toFloat()
-            val sinVal = sin(currentAngle.toDouble()).toFloat()
-
-            val px = particleCenter.x + cosVal * currentDistance
-            val py = particleCenter.y + sinVal * currentDistance * 0.80f
-
-            val proximity = (1f - (currentDistance / maxRadius)).coerceIn(0.2f, 1f)
-            val twinkle = 0.8f + 0.2f * sin(animTime * 4f + particleBuffer.initialAngles[i])
-            val alpha = (particleBuffer.baseAlphas[i] * proximity * twinkle * state.glowIntensity).coerceIn(0.15f, 1.0f)
-
-            val colorArgb = particleBuffer.colorsArgb[i]
-
-            drawCircle(
-                color = Color(colorArgb).copy(alpha = alpha),
-                radius = particleBuffer.radii[i] * (0.8f + proximity * 0.5f),
-                center = Offset(px, py)
-            )
-        }
-
-        // 5. Photon Ring (Event Horizon Edge Lens Glow - Depth Layer 1.0f)
+        // 5. Photon Ring (Event Horizon Edge Lensing Glow)
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
@@ -271,13 +287,13 @@ fun BlackHoleShaderCanvas(
                     Color.Transparent
                 ),
                 center = singularityCenter,
-                radius = blackHoleRadius * 1.30f
+                radius = blackHoleRadius * 1.32f
             ),
-            radius = blackHoleRadius * 1.30f,
+            radius = blackHoleRadius * 1.32f,
             center = singularityCenter
         )
 
-        // 6. Singularity Event Horizon Core (Absolute Void - Depth Layer 1.0f)
+        // 6. Singularity Event Horizon Core (Absolute Black Void)
         drawCircle(
             color = Color(0xFF000000),
             radius = blackHoleRadius,

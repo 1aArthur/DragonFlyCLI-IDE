@@ -34,9 +34,14 @@ fun CodeEditorScreen(
     onAskAiAboutCode: (String) -> Unit
 ) {
     val haptic = rememberHapticFeedback()
+    val fontState by FontController.state.collectAsState()
     val tabs by viewModel.tabs.collectAsState()
     val activeIndex by viewModel.activeTabIndex.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+
+    val editorFontFamily = fontState.selectedEditorFont.fontFamily
+    val editorFontSize = fontState.editorFontSizeSp.sp
+    val editorLineHeight = (fontState.editorFontSizeSp * fontState.lineSpacingMultiplier).sp
 
     var showSearchField by remember { mutableStateOf(false) }
 
@@ -209,10 +214,10 @@ fun CodeEditorScreen(
                         for (i in 1..linesCount) {
                             Text(
                                 text = i.toString(),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
+                                fontFamily = editorFontFamily,
+                                fontSize = editorFontSize,
                                 color = TextMuted,
-                                lineHeight = 18.sp
+                                lineHeight = editorLineHeight
                             )
                         }
                     }
@@ -232,9 +237,9 @@ fun CodeEditorScreen(
                             unfocusedTextColor = TextPrimary
                         ),
                         textStyle = LocalTextStyle.current.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            lineHeight = 18.sp
+                            fontFamily = editorFontFamily,
+                            fontSize = editorFontSize,
+                            lineHeight = editorLineHeight
                         ),
                         visualTransformation = {
                             androidx.compose.ui.text.input.TransformedText(

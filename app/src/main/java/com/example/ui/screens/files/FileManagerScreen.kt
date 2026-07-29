@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.FileItem
 import com.example.ui.components.GlassCard
+import com.example.ui.components.RoomDatabaseInspector
 import com.example.ui.theme.*
 
 @Composable
@@ -34,6 +35,9 @@ fun FileManagerScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var isCreatingFolder by remember { mutableStateOf(false) }
     var newItemName by remember { mutableStateOf("") }
+
+    var showDbInspector by remember { mutableStateOf(false) }
+    var inspectingDbName by remember { mutableStateOf("dragonfly_room_database.db") }
 
     Column(
         modifier = Modifier
@@ -71,6 +75,12 @@ fun FileManagerScreen(
                 }
 
                 Row {
+                    IconButton(onClick = {
+                        inspectingDbName = "dragonfly_room_database.db"
+                        showDbInspector = true
+                    }) {
+                        Icon(Icons.Default.Storage, "Inspetor Room DB", tint = TerminalYellow)
+                    }
                     IconButton(onClick = {
                         isCreatingFolder = false
                         showCreateDialog = true
@@ -124,14 +134,22 @@ fun FileManagerScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(files) { file ->
+                val isDb = file.name.endsWith(".db") || file.name.endsWith(".sqlite") || file.name.endsWith(".room")
                 FileListItem(
                     file = file,
                     onItemClick = {
                         if (file.isDirectory) {
                             viewModel.loadDirectory(file.path)
+                        } else if (isDb) {
+                            inspectingDbName = file.name
+                            showDbInspector = true
                         } else {
                             onOpenFileInEditor(file.path)
                         }
+                    },
+                    onInspectDb = {
+                        inspectingDbName = file.name
+                        showDbInspector = true
                     },
                     onDelete = { viewModel.deleteFile(file) },
                     onBookmark = { viewModel.toggleBookmark(file) },
@@ -183,12 +201,20 @@ fun FileManagerScreen(
             containerColor = DarkSurface
         )
     }
+
+    if (showDbInspector) {
+        RoomDatabaseInspector(
+            dbName = inspectingDbName,
+            onDismiss = { showDbInspector = false }
+        )
+    }
 }
 
 @Composable
 fun FileListItem(
     file: FileItem,
     onItemClick: () -> Unit,
+    onInspectDb: () -> Unit = {},
     onDelete: () -> Unit,
     onBookmark: () -> Unit,
     onRunInTerminal: () -> Unit,
@@ -197,6 +223,7 @@ fun FileListItem(
     onUnzip: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val isDb = file.name.endsWith(".db") || file.name.endsWith(".sqlite") || file.name.endsWith(".room")
 
     GlassCard(
         modifier = Modifier
@@ -215,9 +242,17 @@ fun FileListItem(
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(
-                    imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile,
+                    imageVector = when {
+                        file.isDirectory -> Icons.Default.Folder
+                        isDb -> Icons.Default.Storage
+                        else -> Icons.Default.InsertDriveFile
+                    },
                     contentDescription = null,
-                    tint = if (file.isDirectory) GlowCyan else ElectricBlue,
+                    tint = when {
+                        file.isDirectory -> GlowCyan
+                        isDb -> TerminalYellow
+                        else -> ElectricBlue
+                    },
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -237,6 +272,15 @@ fun FileListItem(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    if (isDb) {
+                        DropdownMenuItem(
+                            text = { Text("Inspecionar Room DB", color = GlowCyan) },
+                            onClick = {
+                                onInspectDb()
+                                showMenu = false
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Favoritar", color = TextPrimary) },
                         onClick = {

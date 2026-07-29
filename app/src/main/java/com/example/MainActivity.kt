@@ -23,10 +23,22 @@ import com.example.ui.theme.BlackHoleBackground
 import com.example.ui.theme.DragonflyTheme
 import com.example.utils.GitHelper
 
+import androidx.lifecycle.lifecycleScope
+import com.example.utils.performance.NativePerformanceEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Deploy Native C / Python / Shell performance optimizer scripts & Rust toolchain & Wasmtime engine in background thread
+        lifecycleScope.launch(Dispatchers.IO) {
+            NativePerformanceEngine.deployNativeOptimizerTools(applicationContext)
+            com.example.utils.rust.RustCargoNdkEngine.initializeRustEnvironment(applicationContext)
+            com.example.utils.wasm.WasmtimeEngine.initializeWasmtimeEnvironment(applicationContext)
+        }
 
         // Core singletons and database initialization
         val database = AppDatabase.getDatabase(this)
