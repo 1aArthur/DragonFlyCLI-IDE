@@ -91,6 +91,16 @@ class FileRepository(
         }
     }
 
+    suspend fun renameFile(oldPath: String, newName: String): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val file = File(oldPath)
+            val newFile = File(file.parentFile, newName)
+            file.renameTo(newFile)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun zipDirectory(dirPath: String, zipFilePath: String): Boolean = withContext(Dispatchers.IO) {
         return@withContext try {
             val sourceDir = File(dirPath)

@@ -11,7 +11,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
@@ -20,10 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.TerminalLine
+import com.example.data.repository.TerminalSession
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.*
 import com.example.utils.HapticType
@@ -33,6 +38,10 @@ import com.example.utils.rememberHapticFeedback
 fun TerminalScreen(viewModel: TerminalViewModel) {
     val haptic = rememberHapticFeedback()
     val fontState by FontController.state.collectAsState()
+
+    val sessions by viewModel.sessions.collectAsState()
+    val activeSessionId by viewModel.activeSessionId.collectAsState()
+
     val lines by viewModel.lines.collectAsState()
     val currentDir by viewModel.currentDir.collectAsState()
     val isRunning by viewModel.isRunning.collectAsState()
@@ -42,11 +51,13 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
     val terminalFontSize = fontState.terminalFontSizeSp.sp
     val terminalLineHeight = (fontState.terminalFontSizeSp * fontState.lineSpacingMultiplier).sp
 
-    val isTermuxMode by viewModel.terminalManager.isTermuxMode.collectAsState()
-    val termuxStatus by viewModel.terminalManager.termuxStatus.collectAsState()
+    val isTermuxMode by viewModel.isTermuxMode.collectAsState()
 
     var inputCommand by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    var sessionToRename by remember { mutableStateOf<TerminalSession?>(null) }
+    var renameInput by remember { mutableStateOf("") }
 
     val quickCommands = if (isTermuxMode) {
         listOf("pkg update", "termux-toast Hello", "termux-battery-status", "uname -a", "clear", "help")
@@ -66,11 +77,130 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
             .background(Color.Transparent)
             .padding(8.dp)
     ) {
-        // Header Status Bar
+        // Multi-Session Tab Bar
         GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp)
+                .padding(bottom = 6.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LazyRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(sessions) { session ->
+                        val isSelected = session.id == activeSessionId
+                        val sessionTitle by session.title.collectAsState()
+                        val sessionRunning by session.isRunning.collectAsState()
+
+                        Surface(
+                            color = if (isSelected) Color(0xFF1E293B) else DarkSurface,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isSelected) 1.dp else 0.5.dp,
+                                color = if (isSelected) GlowCyan else DarkCardBorder
+                            ),
+                            modifier = Modifier.clickable {
+                                haptic(HapticType.LIGHT_CLICK)
+                                viewModel.selectSession(session.id)
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (sessionRunning) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(10.dp),
+                                        color = TerminalYellow,
+                                        strokeWidth = 1.5.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Terminal,
+                                        contentDescription = null,
+                                        tint = if (isSelected) GlowCyan else TextMuted,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+
+                                Text(
+                                    text = sessionTitle,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) TextPrimary else TextSecondary,
+                                    maxLines = 1
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        sessionToRename = session
+                                        renameInput = sessionTitle
+                                    },
+                                    modifier = Modifier.size(16.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Renomear Aba",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+
+                                if (sessions.size > 1) {
+                                    IconButton(
+                                        onClick = {
+                                            haptic(HapticType.LIGHT_CLICK)
+                                            viewModel.closeSession(session.id)
+                                        },
+                                        modifier = Modifier.size(16.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Fechar Sessão",
+                                            tint = TextMuted,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                IconButton(
+                    onClick = {
+                        haptic(HapticType.LIGHT_CLICK)
+                        viewModel.createNewSession()
+                    },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(Color(0xFF1E293B), shape = RoundedCornerShape(6.dp))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Nova Sessão de Terminal",
+                        tint = GlowCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        // Header Status Bar & Meta
+        GlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -83,8 +213,6 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.Terminal, "Terminal", tint = GlowCyan, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = currentDir,
                         fontFamily = FontFamily.Monospace,
@@ -98,14 +226,13 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Termux Mode Toggle Switch
                     FilterChip(
                         selected = isTermuxMode,
                         onClick = {
                             haptic(HapticType.HEAVY_CLICK)
                             viewModel.terminalManager.setTermuxMode(!isTermuxMode)
                         },
-                        label = { Text("Termux Mode", fontSize = 10.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+                        label = { Text("Termux Mode", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Color(0xFF0D2818),
                             selectedLabelColor = TerminalGreen,
@@ -283,5 +410,39 @@ fun TerminalScreen(viewModel: TerminalViewModel) {
                 }
             }
         }
+    }
+
+    // Modal Dialog to rename a session tab
+    sessionToRename?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionToRename = null },
+            title = { Text("Renomear Aba do Terminal", color = TextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renameInput.isNotBlank()) {
+                            viewModel.renameSession(session.id, renameInput)
+                        }
+                        sessionToRename = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+                ) {
+                    Text("Salvar", color = BlackHoleBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionToRename = null }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DarkSurface
+        )
     }
 }

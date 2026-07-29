@@ -31,13 +31,24 @@ fun FileManagerScreen(
     val currentPath by viewModel.currentPath.collectAsState()
     val files by viewModel.files.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
+    val searchFilter by viewModel.searchFilter.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var isCreatingFolder by remember { mutableStateOf(false) }
     var newItemName by remember { mutableStateOf("") }
 
+    var renamingItem by remember { mutableStateOf<FileItem?>(null) }
+    var renameInputName by remember { mutableStateOf("") }
+
+    var fileDetailsItem by remember { mutableStateOf<FileItem?>(null) }
+
     var showDbInspector by remember { mutableStateOf(false) }
     var inspectingDbName by remember { mutableStateOf("dragonfly_room_database.db") }
+
+    val filteredFiles = remember(files, searchFilter) {
+        if (searchFilter.isBlank()) files
+        else files.filter { it.name.contains(searchFilter, ignoreCase = true) }
+    }
 
     Column(
         modifier = Modifier
@@ -45,57 +56,110 @@ fun FileManagerScreen(
             .background(Color.Transparent)
             .padding(8.dp)
     ) {
-        // Path Header
+        // Path Header & Quick Actions
         GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp)
+                .padding(bottom = 6.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Column(modifier = Modifier.padding(8.dp)) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    IconButton(onClick = { viewModel.navigateUp() }) {
-                        Icon(Icons.Default.ArrowUpward, "Subir Diretório", tint = GlowCyan)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        IconButton(onClick = { viewModel.navigateUp() }) {
+                            Icon(Icons.Default.ArrowUpward, "Subir Diretório", tint = GlowCyan)
+                        }
+                        Text(
+                            text = currentPath,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = TextSecondary,
+                            maxLines = 1
+                        )
                     }
-                    Text(
-                        text = currentPath,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = TextSecondary,
-                        maxLines = 1
-                    )
+
+                    Row {
+                        IconButton(onClick = {
+                            inspectingDbName = "dragonfly_room_database.db"
+                            showDbInspector = true
+                        }) {
+                            Icon(Icons.Default.Storage, "Inspetor Room DB", tint = TerminalYellow)
+                        }
+                        IconButton(onClick = {
+                            isCreatingFolder = false
+                            showCreateDialog = true
+                        }) {
+                            Icon(Icons.Default.NoteAdd, "Novo Arquivo", tint = GlowCyan)
+                        }
+                        IconButton(onClick = {
+                            isCreatingFolder = true
+                            showCreateDialog = true
+                        }) {
+                            Icon(Icons.Default.CreateNewFolder, "Nova Pasta", tint = ElectricBlue)
+                        }
+                    }
                 }
 
-                Row {
-                    IconButton(onClick = {
-                        inspectingDbName = "dragonfly_room_database.db"
-                        showDbInspector = true
-                    }) {
-                        Icon(Icons.Default.Storage, "Inspetor Room DB", tint = TerminalYellow)
+                // Quick Path Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val rootDir = viewModel.fileRepository.getRootDirectory().absolutePath
+                    Surface(
+                        color = DarkSurface,
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, GlowCyan),
+                        modifier = Modifier.clickable { viewModel.loadDirectory(rootDir) }
+                    ) {
+                        Text("📁 Root do App", fontSize = 10.sp, color = GlowCyan, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                     }
-                    IconButton(onClick = {
-                        isCreatingFolder = false
-                        showCreateDialog = true
-                    }) {
-                        Icon(Icons.Default.NoteAdd, "Novo Arquivo", tint = GlowCyan)
-                    }
-                    IconButton(onClick = {
-                        isCreatingFolder = true
-                        showCreateDialog = true
-                    }) {
-                        Icon(Icons.Default.CreateNewFolder, "Nova Pasta", tint = ElectricBlue)
+
+                    val downloadDir = "/sdcard/Download"
+                    if (java.io.File(downloadDir).exists()) {
+                        Surface(
+                            color = DarkSurface,
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, ElectricBlue),
+                            modifier = Modifier.clickable { viewModel.loadDirectory(downloadDir) }
+                        ) {
+                            Text("📥 Downloads", fontSize = 10.sp, color = ElectricBlue, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                        }
                     }
                 }
             }
         }
+
+        // Search Filter TextField
+        OutlinedTextField(
+            value = searchFilter,
+            onValueChange = { viewModel.setSearchFilter(it) },
+            placeholder = { Text("Filtrar arquivos...", fontSize = 11.sp, color = TextMuted) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = TextMuted, modifier = Modifier.size(16.dp)) },
+            trailingIcon = {
+                if (searchFilter.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.setSearchFilter("") }) {
+                        Icon(Icons.Default.Close, "Limpar", tint = TextMuted, modifier = Modifier.size(16.dp))
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                focusedBorderColor = GlowCyan,
+                unfocusedBorderColor = DarkCardBorder
+            ),
+            singleLine = true
+        )
 
         // Bookmark row if available
         if (bookmarks.isNotEmpty()) {
@@ -133,7 +197,7 @@ fun FileManagerScreen(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(files) { file ->
+            items(filteredFiles) { file ->
                 val isDb = file.name.endsWith(".db") || file.name.endsWith(".sqlite") || file.name.endsWith(".room")
                 FileListItem(
                     file = file,
@@ -151,9 +215,16 @@ fun FileManagerScreen(
                         inspectingDbName = file.name
                         showDbInspector = true
                     },
+                    onRename = {
+                        renamingItem = file
+                        renameInputName = file.name
+                    },
+                    onShowDetails = {
+                        fileDetailsItem = file
+                    },
                     onDelete = { viewModel.deleteFile(file) },
                     onBookmark = { viewModel.toggleBookmark(file) },
-                    onRunInTerminal = { onRunFileInTerminal("cat ${file.path}") },
+                    onRunInTerminal = { onRunFileInTerminal("cat '${file.path}'") },
                     onAskAi = { onAskAiAboutFile("Analise o arquivo: ${file.path}") },
                     onZip = { viewModel.zipDirectory(file) },
                     onUnzip = { viewModel.unzipFile(file) }
@@ -202,6 +273,68 @@ fun FileManagerScreen(
         )
     }
 
+    // Modal Rename Dialog
+    renamingItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { renamingItem = null },
+            title = { Text("Renomear ${if (item.isDirectory) "Pasta" else "Arquivo"}", color = TextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = renameInputName,
+                    onValueChange = { renameInputName = it },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renameInputName.isNotBlank() && renameInputName != item.name) {
+                            viewModel.renameFile(item, renameInputName)
+                        }
+                        renamingItem = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+                ) {
+                    Text("Salvar", color = BlackHoleBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingItem = null }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
+
+    // Modal Details Dialog
+    fileDetailsItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { fileDetailsItem = null },
+            title = { Text("Detalhes do Item", color = GlowCyan) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Nome: ${item.name}", fontSize = 12.sp, color = TextPrimary, fontFamily = FontFamily.Monospace)
+                    Text("Caminho: ${item.path}", fontSize = 11.sp, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                    Text("Tipo: ${if (item.isDirectory) "Diretório" else "Arquivo"}", fontSize = 11.sp, color = TextMuted)
+                    if (!item.isDirectory) {
+                        Text("Tamanho: ${item.sizeBytes} bytes", fontSize = 11.sp, color = TextMuted)
+                    }
+                    Text("Última Modificação: ${java.util.Date(item.lastModified)}", fontSize = 10.sp, color = TextMuted)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { fileDetailsItem = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+                ) {
+                    Text("Fechar", color = BlackHoleBackground)
+                }
+            },
+            containerColor = DarkSurface
+        )
+    }
+
     if (showDbInspector) {
         RoomDatabaseInspector(
             dbName = inspectingDbName,
@@ -215,6 +348,8 @@ fun FileListItem(
     file: FileItem,
     onItemClick: () -> Unit,
     onInspectDb: () -> Unit = {},
+    onRename: () -> Unit = {},
+    onShowDetails: () -> Unit = {},
     onDelete: () -> Unit,
     onBookmark: () -> Unit,
     onRunInTerminal: () -> Unit,
@@ -281,6 +416,20 @@ fun FileListItem(
                             }
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("Renomear", color = TextPrimary) },
+                        onClick = {
+                            onRename()
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Detalhes do Item", color = TextPrimary) },
+                        onClick = {
+                            onShowDetails()
+                            showMenu = false
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Favoritar", color = TextPrimary) },
                         onClick = {

@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
         val fileManagerViewModel = FileManagerViewModel(fileRepository)
         val agentsViewModel = AgentsViewModel(workflowRepository, terminalManager, chatRepository)
         val gitViewModel = GitViewModel(gitHelper)
-        val settingsViewModel = SettingsViewModel(apiConfigRepository)
+        val settingsViewModel = SettingsViewModel(apiConfigRepository, aiApiClient)
 
         setContent {
             DragonflyTheme {

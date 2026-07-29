@@ -23,14 +23,28 @@ class FileManagerViewModel(val fileRepository: FileRepository) : ViewModel() {
     val bookmarks: StateFlow<List<BookmarkEntity>> = fileRepository.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _searchFilter = MutableStateFlow("")
+    val searchFilter: StateFlow<String> = _searchFilter.asStateFlow()
+
     init {
         loadDirectory(_currentPath.value)
+    }
+
+    fun setSearchFilter(query: String) {
+        _searchFilter.value = query
     }
 
     fun loadDirectory(path: String) {
         viewModelScope.launch {
             _currentPath.value = path
             _files.value = fileRepository.listFiles(path)
+        }
+    }
+
+    fun renameFile(item: FileItem, newName: String) {
+        viewModelScope.launch {
+            fileRepository.renameFile(item.path, newName)
+            loadDirectory(_currentPath.value)
         }
     }
 

@@ -5,10 +5,11 @@ import com.example.data.db.dao.CommandDao
 import com.example.data.db.entities.CommandHistoryEntity
 import com.example.utils.TermuxBridge
 import com.example.utils.TermuxStatus
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
@@ -24,72 +25,141 @@ data class TerminalLine(
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TerminalManager(
     private val context: Context,
     private val commandDao: CommandDao
 ) {
-    private var currentDirectory: File = context.filesDir
+    private val managerScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    private val _isTermuxMode = MutableStateFlow(false)
-    val isTermuxMode: StateFlow<Boolean> = _isTermuxMode.asStateFlow()
+    private val _sessions = MutableStateFlow<List<TerminalSession>>(emptyList())
+    val sessions: StateFlow<List<TerminalSession>> = _sessions.asStateFlow()
+
+    private val _activeSessionId = MutableStateFlow<String>("")
+    val activeSessionId: StateFlow<String> = _activeSessionId.asStateFlow()
 
     private val _termuxStatus = MutableStateFlow(TermuxBridge.checkTermuxStatus(context))
     val termuxStatus: StateFlow<TermuxStatus> = _termuxStatus.asStateFlow()
 
-    private val _lines = MutableStateFlow<List<TerminalLine>>(
-        listOf(
-            TerminalLine("DragonflyCLI Terminal v2.5 initialized.", TerminalLine.LineType.SYSTEM),
-            TerminalLine("Working directory: ${currentDirectory.absolutePath}", TerminalLine.LineType.SYSTEM),
-            TerminalLine("Type 'help' for available CLI commands.", TerminalLine.LineType.SYSTEM)
+    val activeSession: TerminalSession?
+        get() = _sessions.value.find { it.id == _activeSessionId.value } ?: _sessions.value.firstOrNull()
+
+    private val activeSessionFlow: Flow<TerminalSession?> = combine(_sessions, _activeSessionId) { list, id ->
+        list.find { it.id == id } ?: list.firstOrNull()
+    }
+
+    // Backward compatible StateFlows for single-session callers
+    val lines: StateFlow<List<TerminalLine>> = activeSessionFlow
+        .flatMapLatest { session -> session?.lines ?: flowOf(emptyList()) }
+        .stateIn(managerScope, SharingStarted.Eagerly, emptyList())
+
+    val currentDirState: StateFlow<String> = activeSessionFlow
+        .flatMapLatest { session -> session?.currentDir ?: flowOf(context.filesDir.absolutePath) }
+        .stateIn(managerScope, SharingStarted.Eagerly, context.filesDir.absolutePath)
+
+    val isRunning: StateFlow<Boolean> = activeSessionFlow
+        .flatMapLatest { session -> session?.isRunning ?: flowOf(false) }
+        .stateIn(managerScope, SharingStarted.Eagerly, false)
+
+    val isTermuxMode: StateFlow<Boolean> = activeSessionFlow
+        .flatMapLatest { session -> session?.isTermuxMode ?: flowOf(false) }
+        .stateIn(managerScope, SharingStarted.Eagerly, false)
+
+    init {
+        createNewSession("Terminal 1")
+    }
+
+    fun createNewSession(title: String? = null): TerminalSession {
+        val baseDir = activeSession?.workingDirFile ?: context.filesDir
+        val count = _sessions.value.size + 1
+        val sessionTitle = title ?: "Terminal $count"
+        val session = TerminalSession(
+            initialTitle = sessionTitle,
+            initialDir = baseDir
         )
-    )
-    val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
+        _sessions.value = _sessions.value + session
+        _activeSessionId.value = session.id
+        return session
+    }
 
-    private val _currentDirState = MutableStateFlow(currentDirectory.absolutePath)
-    val currentDirState: StateFlow<String> = _currentDirState.asStateFlow()
+    fun closeSession(id: String) {
+        val currentList = _sessions.value
+        if (currentList.size <= 1) {
+            val session = currentList.firstOrNull() ?: return
+            session.clearLines()
+            session.appendLine(TerminalLine("Sessão reiniciada.", TerminalLine.LineType.SYSTEM))
+            return
+        }
 
-    private val _isRunning = MutableStateFlow(false)
-    val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+        val sessionToClose = currentList.find { it.id == id }
+        sessionToClose?.currentProcess?.destroy()
 
-    private var currentProcess: Process? = null
+        val newList = currentList.filter { it.id != id }
+        _sessions.value = newList
 
-    fun getWorkingDirectory(): File = currentDirectory
+        if (_activeSessionId.value == id) {
+            _activeSessionId.value = newList.last().id
+        }
+    }
+
+    fun selectSession(id: String) {
+        if (_sessions.value.any { it.id == id }) {
+            _activeSessionId.value = id
+        }
+    }
+
+    fun renameSession(id: String, newName: String) {
+        val session = _sessions.value.find { it.id == id }
+        if (session != null && newName.isNotBlank()) {
+            session.setTitle(newName)
+        }
+    }
+
+    fun getWorkingDirectory(targetSessionId: String? = null): File {
+        val target = if (targetSessionId != null) _sessions.value.find { it.id == targetSessionId } else activeSession
+        return target?.workingDirFile ?: context.filesDir
+    }
 
     fun refreshTermuxStatus() {
         _termuxStatus.value = TermuxBridge.checkTermuxStatus(context)
     }
 
-    fun setTermuxMode(enabled: Boolean) {
-        _isTermuxMode.value = enabled
-        if (enabled) {
-            appendLine(TerminalLine("Modo Termux Bridge ativado. Comandos serão enviados via Intent com.termux.RUN_COMMAND.", TerminalLine.LineType.SYSTEM))
-        } else {
-            appendLine(TerminalLine("Modo de Shell Nativo Android reativado.", TerminalLine.LineType.SYSTEM))
-        }
+    fun setTermuxMode(enabled: Boolean, targetSessionId: String? = null) {
+        val target = if (targetSessionId != null) _sessions.value.find { it.id == targetSessionId } else activeSession
+        target?.setTermuxMode(enabled)
     }
 
-    suspend fun executeCommand(commandStr: String) = withContext(Dispatchers.IO) {
+    suspend fun executeCommand(commandStr: String, targetSessionId: String? = null) = withContext(Dispatchers.IO) {
         val trimmed = commandStr.trim()
         if (trimmed.isEmpty()) return@withContext
 
-        appendLine(TerminalLine("$ ${trimmed}", TerminalLine.LineType.COMMAND))
+        val session = (if (targetSessionId != null) _sessions.value.find { it.id == targetSessionId } else activeSession)
+            ?: createNewSession()
+
+        // Auto rename default session title to concise command name
+        if (session.title.value.startsWith("Terminal ")) {
+            val conciseName = trimmed.split(" ").firstOrNull() ?: trimmed
+            session.setTitle(conciseName.take(15))
+        }
+
+        session.appendLine(TerminalLine("$ ${trimmed}", TerminalLine.LineType.COMMAND))
 
         // Check if command explicitly uses termux: prefix or Termux mode is enabled
-        if (trimmed.startsWith("termux:") || _isTermuxMode.value) {
+        if (trimmed.startsWith("termux:") || session.isTermuxMode.value) {
             val actualCmd = if (trimmed.startsWith("termux:")) trimmed.removePrefix("termux:").trim() else trimmed
-            executeViaTermuxBridge(actualCmd)
+            executeViaTermuxBridge(session, actualCmd)
             return@withContext
         }
 
         // Handle shell built-ins
         when {
             trimmed == "clear" -> {
-                _lines.value = emptyList()
+                session.clearLines()
                 return@withContext
             }
             trimmed == "pwd" -> {
-                appendLine(TerminalLine(currentDirectory.absolutePath, TerminalLine.LineType.OUTPUT))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(session.workingDirFile.absolutePath, TerminalLine.LineType.OUTPUT))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed == "native-opt" || trimmed == "opt-status" -> {
@@ -102,14 +172,14 @@ class TerminalManager(
                     Ferramentas Nativas em /bin: $binFiles
                     Última renderização LRU: ${com.example.utils.performance.NativePerformanceEngine.lastExecutionTimeMs} ms
                 """.trimIndent()
-                appendLine(TerminalLine(msg, TerminalLine.LineType.SUCCESS))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(msg, TerminalLine.LineType.SUCCESS))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed == "benchmark" -> {
-                appendLine(TerminalLine("⚡ Executando Benchmark do Motor Nativo C/Python/Shell...", TerminalLine.LineType.SYSTEM))
+                session.appendLine(TerminalLine("⚡ Executando Benchmark do Motor Nativo C/Python/Shell...", TerminalLine.LineType.SYSTEM))
                 val start = System.nanoTime()
-                val scanResults = com.example.utils.performance.NativePerformanceEngine.performFastWorkspaceScan(currentDirectory, "")
+                val scanResults = com.example.utils.performance.NativePerformanceEngine.performFastWorkspaceScan(session.workingDirFile, "")
                 val elapsed = (System.nanoTime() - start) / 1_000_000.0
                 val stats = com.example.utils.performance.NativePerformanceEngine.getMemoryStats()
                 val resMsg = """
@@ -117,26 +187,26 @@ class TerminalManager(
                     Arquivos varridos em alta velocidade: ${scanResults.size}
                     $stats
                 """.trimIndent()
-                appendLine(TerminalLine(resMsg, TerminalLine.LineType.SUCCESS))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(resMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed.startsWith("cargo ") || trimmed == "cargo" || trimmed.startsWith("cargo-ndk") -> {
-                val output = com.example.utils.rust.RustCargoNdkEngine.handleCargoCommand(trimmed, currentDirectory)
-                appendLine(TerminalLine(output, TerminalLine.LineType.SUCCESS))
-                saveHistory(trimmed, 0)
+                val output = com.example.utils.rust.RustCargoNdkEngine.handleCargoCommand(trimmed, session.workingDirFile)
+                session.appendLine(TerminalLine(output, TerminalLine.LineType.SUCCESS))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed.startsWith("wasm ") || trimmed == "wasm" -> {
                 val parts = trimmed.split("\\s+".toRegex())
                 val subCmd = parts.getOrNull(1) ?: "help"
                 val fileArg = parts.getOrNull(2) ?: "module.wasm"
-                val targetFile = File(currentDirectory, fileArg)
+                val targetFile = File(session.workingDirFile, fileArg)
 
                 val outMsg = when (subCmd) {
                     "inspect" -> com.example.utils.wasm.WasmRuntimeEngine.inspectWasmFile(targetFile)
                     "run" -> com.example.utils.wasm.WasmRuntimeEngine.executeWasmModule(targetFile, parts.drop(3))
-                    "gen", "init" -> com.example.utils.wasm.WasmRuntimeEngine.generateSampleWasmModule(currentDirectory, fileArg)
+                    "gen", "init" -> com.example.utils.wasm.WasmRuntimeEngine.generateSampleWasmModule(session.workingDirFile, fileArg)
                     else -> """
                         🔮 [WASM Runtime Engine] Options:
                           wasm inspect <file.wasm> : Analyze WASM headers and imports/exports
@@ -144,8 +214,8 @@ class TerminalManager(
                           wasm gen [module.wat]    : Generate WebAssembly text format sample module
                         """.trimIndent()
                 }
-                appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed.startsWith("lsp ") || trimmed == "lsp" -> {
@@ -154,7 +224,7 @@ class TerminalManager(
                 val outMsg = when (subCmd) {
                     "status" -> com.example.utils.lsp.LspServerBridge.getStatusSummary()
                     "diag", "diagnostics" -> {
-                        val ktFiles = currentDirectory.walkTopDown().filter { it.extension in listOf("kt", "rs", "py", "c") }.take(5).toList()
+                        val ktFiles = session.workingDirFile.walkTopDown().filter { it.extension in listOf("kt", "rs", "py", "c") }.take(5).toList()
                         val diagLines = ktFiles.flatMap { f ->
                             com.example.utils.lsp.LspServerBridge.getDiagnostics(f, f.readText()).map { "${f.name}:${it.line}:${it.character} [${it.severity}] ${it.message}" }
                         }
@@ -162,8 +232,8 @@ class TerminalManager(
                     }
                     else -> "LSP Commands: lsp status | lsp diag"
                 }
-                appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed.startsWith("profile") || trimmed.startsWith("profiler") -> {
@@ -174,8 +244,8 @@ class TerminalManager(
                     "stop" -> com.example.utils.profiling.PerformanceProfiler.stopProfiling().toFormattedString()
                     else -> com.example.utils.profiling.PerformanceProfiler.getQuickReportSummary()
                 }
-                appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(outMsg, TerminalLine.LineType.SUCCESS))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed == "help" -> {
@@ -200,67 +270,67 @@ class TerminalManager(
                       clear          : Clear terminal screen
                       help           : Display this help prompt
                 """.trimIndent()
-                appendLine(TerminalLine(helpMsg, TerminalLine.LineType.SYSTEM))
-                saveHistory(trimmed, 0)
+                session.appendLine(TerminalLine(helpMsg, TerminalLine.LineType.SYSTEM))
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
             trimmed.startsWith("cd ") || trimmed == "cd" -> {
-                handleCd(trimmed)
-                saveHistory(trimmed, 0)
+                handleCd(session, trimmed)
+                saveHistory(session, trimmed, 0)
                 return@withContext
             }
         }
 
-        // Execute external process in local shell
+        // Execute external process in local shell for this session
         try {
-            _isRunning.value = true
+            session.setRunning(true)
             val processBuilder = ProcessBuilder("sh", "-c", trimmed)
-            processBuilder.directory(currentDirectory)
+            processBuilder.directory(session.workingDirFile)
             processBuilder.environment()["PATH"] = System.getenv("PATH") ?: "/system/bin:/system/xbin"
             processBuilder.environment()["HOME"] = context.filesDir.absolutePath
 
             val process = processBuilder.start()
-            currentProcess = process
+            session.currentProcess = process
 
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val errReader = BufferedReader(InputStreamReader(process.errorStream))
 
             var line: String?
             while (reader.readLine().also { line = it } != null) {
-                appendLine(TerminalLine(line ?: "", TerminalLine.LineType.OUTPUT))
+                session.appendLine(TerminalLine(line ?: "", TerminalLine.LineType.OUTPUT))
             }
 
             var errLine: String?
             while (errReader.readLine().also { errLine = it } != null) {
-                appendLine(TerminalLine(errLine ?: "", TerminalLine.LineType.ERROR))
+                session.appendLine(TerminalLine(errLine ?: "", TerminalLine.LineType.ERROR))
             }
 
             val exitCode = process.waitFor()
             if (exitCode == 0) {
-                appendLine(TerminalLine("Process finished with code 0", TerminalLine.LineType.SUCCESS))
+                session.appendLine(TerminalLine("Process finished with code 0", TerminalLine.LineType.SUCCESS))
             } else {
-                appendLine(TerminalLine("Process exited with code $exitCode", TerminalLine.LineType.ERROR))
+                session.appendLine(TerminalLine("Process exited with code $exitCode", TerminalLine.LineType.ERROR))
             }
-            saveHistory(trimmed, exitCode)
+            saveHistory(session, trimmed, exitCode)
         } catch (e: Exception) {
-            appendLine(TerminalLine("Error executing command: ${e.localizedMessage}", TerminalLine.LineType.ERROR))
-            saveHistory(trimmed, -1)
+            session.appendLine(TerminalLine("Error executing command: ${e.localizedMessage}", TerminalLine.LineType.ERROR))
+            saveHistory(session, trimmed, -1)
         } finally {
-            currentProcess = null
-            _isRunning.value = false
+            session.currentProcess = null
+            session.setRunning(false)
         }
     }
 
-    private suspend fun executeViaTermuxBridge(commandStr: String) {
+    private suspend fun executeViaTermuxBridge(session: TerminalSession, commandStr: String) {
         val status = TermuxBridge.checkTermuxStatus(context)
         if (!status.isTermuxInstalled) {
-            appendLine(TerminalLine("Erro Termux: O aplicativo Termux não está instalado neste dispositivo Android.", TerminalLine.LineType.ERROR))
-            appendLine(TerminalLine("Instale o Termux e o Termux:API via F-Droid ou GitHub para habilitação do ambiente Linux completo.", TerminalLine.LineType.SYSTEM))
-            saveHistory(commandStr, -1)
+            session.appendLine(TerminalLine("Erro Termux: O aplicativo Termux não está instalado neste dispositivo Android.", TerminalLine.LineType.ERROR))
+            session.appendLine(TerminalLine("Instale o Termux e o Termux:API via F-Droid ou GitHub para habilitação do ambiente Linux completo.", TerminalLine.LineType.SYSTEM))
+            saveHistory(session, commandStr, -1)
             return
         }
 
-        appendLine(TerminalLine("[Termux Intent Bridge] Enviando comando com.termux.RUN_COMMAND: $commandStr", TerminalLine.LineType.SYSTEM))
+        session.appendLine(TerminalLine("[Termux Intent Bridge] Enviando comando com.termux.RUN_COMMAND: $commandStr", TerminalLine.LineType.SYSTEM))
         val success = TermuxBridge.executeShellScript(
             context = context,
             script = commandStr,
@@ -269,51 +339,49 @@ class TerminalManager(
         )
 
         if (success) {
-            appendLine(TerminalLine("[Termux Intent Bridge] Intent despachado com sucesso para o Termux Service.", TerminalLine.LineType.SUCCESS))
-            saveHistory("termux:$commandStr", 0)
+            session.appendLine(TerminalLine("[Termux Intent Bridge] Intent despachado com sucesso para o Termux Service.", TerminalLine.LineType.SUCCESS))
+            saveHistory(session, "termux:$commandStr", 0)
         } else {
-            appendLine(TerminalLine("[Termux Intent Bridge] Falha ao despachar o Intent com.termux.RUN_COMMAND.", TerminalLine.LineType.ERROR))
-            saveHistory("termux:$commandStr", -1)
+            session.appendLine(TerminalLine("[Termux Intent Bridge] Falha ao despachar o Intent com.termux.RUN_COMMAND.", TerminalLine.LineType.ERROR))
+            saveHistory(session, "termux:$commandStr", -1)
         }
     }
 
-    private fun handleCd(command: String) {
+    private fun handleCd(session: TerminalSession, command: String) {
         val pathArg = command.removePrefix("cd").trim()
         if (pathArg.isEmpty() || pathArg == "~") {
-            currentDirectory = context.filesDir
+            session.setWorkingDirectory(context.filesDir)
         } else {
             val target = if (pathArg.startsWith("/")) {
                 File(pathArg)
             } else {
-                File(currentDirectory, pathArg)
+                File(session.workingDirFile, pathArg)
             }
             if (target.exists() && target.isDirectory) {
-                currentDirectory = target.canonicalFile
+                session.setWorkingDirectory(target.canonicalFile)
             } else {
-                appendLine(TerminalLine("cd: no such file or directory: $pathArg", TerminalLine.LineType.ERROR))
+                session.appendLine(TerminalLine("cd: no such file or directory: $pathArg", TerminalLine.LineType.ERROR))
                 return
             }
         }
-        _currentDirState.value = currentDirectory.absolutePath
-        appendLine(TerminalLine("Switched to ${currentDirectory.absolutePath}", TerminalLine.LineType.SYSTEM))
+        session.appendLine(TerminalLine("Switched to ${session.workingDirFile.absolutePath}", TerminalLine.LineType.SYSTEM))
     }
 
-    fun killCurrentProcess() {
-        currentProcess?.destroy()
-        _isRunning.value = false
-        appendLine(TerminalLine("Process terminated by user.", TerminalLine.LineType.ERROR))
+    fun killCurrentProcess(targetSessionId: String? = null) {
+        val session = if (targetSessionId != null) _sessions.value.find { it.id == targetSessionId } else activeSession
+        if (session != null) {
+            session.currentProcess?.destroy()
+            session.setRunning(false)
+            session.appendLine(TerminalLine("Process terminated by user.", TerminalLine.LineType.ERROR))
+        }
     }
 
-    private fun appendLine(line: TerminalLine) {
-        _lines.value = _lines.value + line
-    }
-
-    private suspend fun saveHistory(cmd: String, exitCode: Int) {
+    private suspend fun saveHistory(session: TerminalSession, cmd: String, exitCode: Int) {
         try {
             commandDao.insertCommand(
                 CommandHistoryEntity(
                     command = cmd,
-                    workingDirectory = currentDirectory.absolutePath,
+                    workingDirectory = session.workingDirFile.absolutePath,
                     exitCode = exitCode,
                     timestamp = System.currentTimeMillis()
                 )
@@ -323,9 +391,10 @@ class TerminalManager(
         }
     }
 
-    fun getAutocompleteSuggestions(prefix: String): List<String> {
+    fun getAutocompleteSuggestions(prefix: String, targetSessionId: String? = null): List<String> {
         val trimmed = prefix.trim()
-        val files = currentDirectory.listFiles()?.map { it.name } ?: emptyList()
+        val workDir = getWorkingDirectory(targetSessionId)
+        val files = workDir.listFiles()?.map { it.name } ?: emptyList()
         val builtIns = listOf("ls", "cd", "pwd", "cat", "mkdir", "rm", "git", "python", "node", "clear", "help")
         
         return (builtIns + files).filter { it.startsWith(trimmed, ignoreCase = true) }.distinct()

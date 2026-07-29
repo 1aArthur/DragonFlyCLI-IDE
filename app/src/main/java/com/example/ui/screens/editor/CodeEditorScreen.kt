@@ -9,8 +9,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -38,12 +40,15 @@ fun CodeEditorScreen(
     val tabs by viewModel.tabs.collectAsState()
     val activeIndex by viewModel.activeTabIndex.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val statusMessage by viewModel.statusMessage.collectAsState()
 
     val editorFontFamily = fontState.selectedEditorFont.fontFamily
     val editorFontSize = fontState.editorFontSizeSp.sp
     val editorLineHeight = (fontState.editorFontSizeSp * fontState.lineSpacingMultiplier).sp
 
     var showSearchField by remember { mutableStateOf(false) }
+    var showNewFileModal by remember { mutableStateOf(false) }
+    var newFileNameInput by remember { mutableStateOf("") }
 
     val activeTab = tabs.getOrNull(activeIndex)
 
@@ -67,6 +72,13 @@ fun CodeEditorScreen(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = {
+                    haptic(HapticType.LIGHT_CLICK)
+                    showNewFileModal = true
+                }) {
+                    Icon(Icons.Default.NoteAdd, "Novo Arquivo", tint = GlowCyan)
+                }
+
                 // Tab Bar
                 LazyRow(
                     modifier = Modifier.weight(1f),
@@ -116,6 +128,12 @@ fun CodeEditorScreen(
                 Row {
                     IconButton(onClick = {
                         haptic(HapticType.LIGHT_CLICK)
+                        viewModel.formatActiveCode()
+                    }) {
+                        Icon(Icons.Default.Build, "Auto-Formatar", tint = ElectricBlue)
+                    }
+                    IconButton(onClick = {
+                        haptic(HapticType.LIGHT_CLICK)
                         showSearchField = !showSearchField
                     }) {
                         Icon(Icons.Default.Search, "Pesquisar", tint = TextSecondary)
@@ -128,6 +146,10 @@ fun CodeEditorScreen(
                     }
                 }
             }
+        }
+
+        if (statusMessage.isNotBlank()) {
+            Text(statusMessage, fontSize = 11.sp, color = TerminalGreen, modifier = Modifier.padding(bottom = 4.dp))
         }
 
         // Search Bar overlay if enabled
@@ -275,5 +297,40 @@ fun CodeEditorScreen(
                 Text("Nenhum arquivo aberto no Editor", color = TextMuted)
             }
         }
+    }
+
+    if (showNewFileModal) {
+        AlertDialog(
+            onDismissRequest = { showNewFileModal = false },
+            title = { Text("Novo Arquivo no Editor", color = TextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = newFileNameInput,
+                    onValueChange = { newFileNameInput = it },
+                    placeholder = { Text("ex: script.kt, index.js, app.py", color = TextMuted) },
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newFileNameInput.isNotBlank()) {
+                            viewModel.createNewFileTab(newFileNameInput)
+                            newFileNameInput = ""
+                            showNewFileModal = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+                ) {
+                    Text("Criar & Abrir", color = BlackHoleBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewFileModal = false }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DarkSurface
+        )
     }
 }

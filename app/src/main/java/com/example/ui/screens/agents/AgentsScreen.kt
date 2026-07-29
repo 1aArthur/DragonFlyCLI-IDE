@@ -28,26 +28,37 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.db.entities.ChatMessageEntity
+import com.example.data.db.entities.ConversationEntity
 import com.example.data.db.entities.WorkflowEntity
 import com.example.ui.components.CodeBlockWithSyntax
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.*
 import com.example.utils.HapticType
 import com.example.utils.rememberHapticFeedback
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun AgentsScreen(viewModel: AgentsViewModel) {
     val haptic = rememberHapticFeedback()
     val workflows by viewModel.workflows.collectAsState()
+    val conversationsHistory by viewModel.conversationsHistory.collectAsState()
+    val selectedConvId by viewModel.selectedConversationId.collectAsState()
+    val selectedMessages by viewModel.selectedConversationMessages.collectAsState()
+
     val agentLog by viewModel.agentLog.collectAsState()
     val isRunning by viewModel.isAgentRunning.collectAsState()
     val isGenerating by viewModel.isGeneratingWorkflow.collectAsState()
 
     val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Macros & Dashboard, 1 = Agente IA, 2 = Execution Logs
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Macros, 1 = Agente IA, 2 = Histórico Room, 3 = Logs
     var goalInput by remember { mutableStateOf("") }
     var aiWorkflowPrompt by remember { mutableStateOf("") }
+    var historySearchQuery by remember { mutableStateOf("") }
 
     var showCreateWorkflowModal by remember { mutableStateOf(false) }
     var wfName by remember { mutableStateOf("") }
@@ -69,6 +80,18 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                     "Termux & Shell" -> wf.name.contains("Termux", true) || wf.commands.contains("termux", true)
                     else -> true
                 }
+            }
+        }
+    }
+
+    val filteredHistory = remember(conversationsHistory, historySearchQuery) {
+        if (historySearchQuery.isBlank()) {
+            conversationsHistory
+        } else {
+            conversationsHistory.filter { conv ->
+                conv.title.contains(historySearchQuery, ignoreCase = true) ||
+                        conv.provider.contains(historySearchQuery, ignoreCase = true) ||
+                        conv.model.contains(historySearchQuery, ignoreCase = true)
             }
         }
     }
@@ -105,8 +128,8 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                             Icon(Icons.Default.AutoMode, "Automação", tint = GlowCyan, modifier = Modifier.size(18.dp))
                         }
                         Column {
-                            Text("Dashboard de Automações & Macros", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = GlowCyan)
-                            Text("${workflows.size} workflows cadastrados no banco de dados local", fontSize = 11.sp, color = TextMuted)
+                            Text("Dashboard de Automações & Agente IA", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = GlowCyan)
+                            Text("${conversationsHistory.size} consultas salvas no banco Room DB local", fontSize = 11.sp, color = TextMuted)
                         }
                     }
 
@@ -140,7 +163,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                             haptic(HapticType.LIGHT_CLICK)
                             selectedTab = 0
                         },
-                        text = { Text("Macros & Pipelines", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        text = { Text("Macros", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                         icon = { Icon(Icons.Default.Build, null, modifier = Modifier.size(14.dp)) }
                     )
                     Tab(
@@ -149,7 +172,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                             haptic(HapticType.LIGHT_CLICK)
                             selectedTab = 1
                         },
-                        text = { Text("Agente Autônomo", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        text = { Text("Agente IA", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                         icon = { Icon(Icons.Default.SmartToy, null, modifier = Modifier.size(14.dp)) }
                     )
                     Tab(
@@ -157,6 +180,15 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                         onClick = {
                             haptic(HapticType.LIGHT_CLICK)
                             selectedTab = 2
+                        },
+                        text = { Text("Histórico Room (${conversationsHistory.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        icon = { Icon(Icons.Default.History, null, modifier = Modifier.size(14.dp)) }
+                    )
+                    Tab(
+                        selected = selectedTab == 3,
+                        onClick = {
+                            haptic(HapticType.LIGHT_CLICK)
+                            selectedTab = 3
                         },
                         text = { Text("Logs (${agentLog.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                         icon = { Icon(Icons.Default.Terminal, null, modifier = Modifier.size(14.dp)) }
@@ -248,7 +280,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                                     onRun = {
                                         haptic(HapticType.CONFIRM_SUCCESS)
                                         viewModel.executeWorkflow(wf)
-                                        selectedTab = 2 // Switch to logs tab
+                                        selectedTab = 3 // Switch to logs tab
                                     },
                                     onDelete = {
                                         haptic(HapticType.WARNING_ERROR)
@@ -281,7 +313,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                                         haptic(HapticType.KEYPRESS)
                                         aiWorkflowPrompt = it
                                     },
-                                    placeholder = { Text("Ex: Criar script de backup zip e enviar notificação Termux...", fontSize = 11.sp, color = TextMuted) },
+                                    placeholder = { Text("Ex: Criar script de backup zip...", fontSize = 11.sp, color = TextMuted) },
                                     modifier = Modifier.weight(1f),
                                     colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
                                 )
@@ -321,7 +353,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                             Text("Agente Autônomo de Código & DevOps", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = GlowCyan)
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "O Agente analisa de forma autônoma o repositório, cria planos de execução, executa comandos no shell e soluciona tarefas complexas.",
+                                "O Agente analisa o repositório, cria planos de execução, roda comandos no shell e persiste cada consulta e resposta no banco de dados local Room.",
                                 fontSize = 11.sp,
                                 color = TextSecondary,
                                 lineHeight = 16.sp
@@ -346,7 +378,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                                     if (goalInput.isNotBlank()) {
                                         viewModel.runAgentTask(goalInput)
                                         goalInput = ""
-                                        selectedTab = 2 // Switch to logs tab
+                                        selectedTab = 3 // Switch to logs tab
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -360,7 +392,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                                 } else {
                                     Icon(Icons.Default.PlayArrow, null, tint = BlackHoleBackground, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Iniciar Agente Autônomo", color = BlackHoleBackground, fontWeight = FontWeight.Bold)
+                                    Text("Iniciar Agente & Persistir no Room DB", color = BlackHoleBackground, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -380,7 +412,7 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
                                 .fillMaxWidth()
                                 .clickable {
                                     viewModel.runAgentTask(preset)
-                                    selectedTab = 2
+                                    selectedTab = 3
                                 }
                         ) {
                             Row(
@@ -398,7 +430,192 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
             }
 
             2 -> {
-                // TAB 2: EXECUTION LOGS CONSOLE
+                // TAB 2: ROOM DATABASE AI CHAT HISTORY SIDEBAR & DETAIL VIEW
+                Row(modifier = Modifier.fillMaxSize()) {
+                    // Left History Sidebar List (Room Database Persistence)
+                    Column(
+                        modifier = Modifier
+                            .weight(0.45f)
+                            .fillMaxHeight()
+                            .padding(end = 4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = historySearchQuery,
+                            onValueChange = { historySearchQuery = it },
+                            placeholder = { Text("Buscar histórico...", fontSize = 11.sp, color = TextMuted) },
+                            leadingIcon = { Icon(Icons.Default.Search, null, tint = TextMuted, modifier = Modifier.size(14.dp)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                        )
+
+                        if (filteredHistory.isEmpty()) {
+                            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.Inbox, null, tint = TextMuted, modifier = Modifier.size(24.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Nenhuma consulta salva.", fontSize = 11.sp, color = TextMuted)
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(filteredHistory) { conv ->
+                                    val isSelected = conv.id == selectedConvId
+
+                                    GlassCard(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                haptic(HapticType.LIGHT_CLICK)
+                                                viewModel.selectHistoryConversation(conv.id)
+                                            },
+                                        backgroundColor = if (isSelected) Color(0xFF1E293B) else DarkSurface,
+                                        borderColor = if (isSelected) GlowCyan else DarkCardBorder
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = conv.title,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) GlowCyan else TextPrimary,
+                                                    maxLines = 1,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                IconButton(
+                                                    onClick = {
+                                                        haptic(HapticType.WARNING_ERROR)
+                                                        viewModel.deleteHistoryConversation(conv.id)
+                                                    },
+                                                    modifier = Modifier.size(20.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Delete, "Excluir do Room", tint = TerminalRed, modifier = Modifier.size(12.dp))
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(2.dp))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${conv.provider} • ${conv.model}",
+                                                    fontSize = 10.sp,
+                                                    color = TextMuted,
+                                                    maxLines = 1
+                                                )
+                                                Text(
+                                                    text = dateFormat.format(Date(conv.updatedAt)),
+                                                    fontSize = 9.sp,
+                                                    color = TextMuted
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Right History Details Inspector
+                    Column(
+                        modifier = Modifier
+                            .weight(0.55f)
+                            .fillMaxHeight()
+                            .padding(start = 4.dp)
+                    ) {
+                        if (selectedConvId == null) {
+                            GlassCard(
+                                modifier = Modifier.fillMaxSize(),
+                                backgroundColor = DarkSurface
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.QuestionAnswer, null, tint = TextMuted, modifier = Modifier.size(36.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Selecione uma consulta no histórico do Room DB para inspecionar os detalhes completos.", fontSize = 11.sp, color = TextMuted)
+                                }
+                            }
+                        } else {
+                            val activeConv = conversationsHistory.find { it.id == selectedConvId }
+
+                            GlassCard(
+                                modifier = Modifier.fillMaxSize(),
+                                backgroundColor = DarkSurface
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(10.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(activeConv?.title ?: "Detalhes da Consulta", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GlowCyan)
+                                            Text("Persistido no SQLite via Room DAO", fontSize = 10.sp, color = TextMuted)
+                                        }
+
+                                        if (activeConv != null) {
+                                            IconButton(
+                                                onClick = {
+                                                    haptic(HapticType.CONFIRM_SUCCESS)
+                                                    viewModel.runAgentTask(activeConv.title.removePrefix("Agente: "))
+                                                    selectedTab = 3
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(Icons.Default.Replay, "Re-executar Consulta", tint = TerminalGreen, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        items(selectedMessages) { msg ->
+                                            HistoryMessageItem(
+                                                message = msg,
+                                                onCopy = { txt ->
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("QueryResponse", txt))
+                                                    Toast.makeText(context, "Conteúdo copiado com sucesso!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            3 -> {
+                // TAB 3: EXECUTION LOGS CONSOLE
                 Column(modifier = Modifier.fillMaxSize()) {
                     Row(
                         modifier = Modifier
@@ -524,6 +741,104 @@ fun AgentsScreen(viewModel: AgentsViewModel) {
 }
 
 @Composable
+fun HistoryMessageItem(
+    message: ChatMessageEntity,
+    onCopy: (String) -> Unit
+) {
+    val isUser = message.role == "user"
+    val cardBg = if (isUser) Color(0xFF161F30) else DarkSurface
+    val borderCol = if (isUser) ElectricBlue else DarkCardBorder
+
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = cardBg,
+        borderColor = borderCol,
+        cornerRadius = 10.dp
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(
+                        imageVector = if (isUser) Icons.Default.Person else Icons.Default.SmartToy,
+                        contentDescription = null,
+                        tint = if (isUser) ElectricBlue else GlowCyan,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = if (isUser) "Pergunta / Prompt" else "Resposta da IA",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isUser) ElectricBlue else GlowCyan
+                    )
+                }
+
+                IconButton(
+                    onClick = { onCopy(message.content) },
+                    modifier = Modifier.size(20.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, "Copiar", tint = TextMuted, modifier = Modifier.size(12.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            val content = message.content
+            val codeBlockRegex = Regex("```([a-zA-Z0-9_]*)\\n?([\\s\\S]*?)```")
+            val matches = codeBlockRegex.findAll(content).toList()
+
+            if (matches.isEmpty()) {
+                Text(
+                    text = content,
+                    fontSize = 11.sp,
+                    color = TextPrimary,
+                    lineHeight = 15.sp
+                )
+            } else {
+                var lastIndex = 0
+                matches.forEach { match ->
+                    val textBefore = content.substring(lastIndex, match.range.first)
+                    if (textBefore.isNotBlank()) {
+                        Text(
+                            text = textBefore.trim(),
+                            fontSize = 11.sp,
+                            color = TextPrimary,
+                            lineHeight = 15.sp
+                        )
+                    }
+
+                    val lang = match.groupValues[1].ifBlank { "code" }
+                    val codeText = match.groupValues[2].trim()
+
+                    CodeBlockWithSyntax(
+                        code = codeText,
+                        language = lang,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
+
+                    lastIndex = match.range.last + 1
+                }
+
+                if (lastIndex < content.length) {
+                    val textAfter = content.substring(lastIndex)
+                    if (textAfter.isNotBlank()) {
+                        Text(
+                            text = textAfter.trim(),
+                            fontSize = 11.sp,
+                            color = TextPrimary,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun MacroCardItem(
     workflow: WorkflowEntity,
     onRun: () -> Unit,
@@ -584,4 +899,3 @@ fun MacroCardItem(
         }
     }
 }
-

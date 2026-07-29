@@ -3,6 +3,8 @@ package com.example.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.entities.ApiConfigEntity
+import com.example.data.network.AiApiClient
+import com.example.data.network.AiRequestOptions
 import com.example.data.repository.ApiConfigRepository
 import com.example.domain.model.AiProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,7 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(private val apiConfigRepository: ApiConfigRepository) : ViewModel() {
+class SettingsViewModel(
+    private val apiConfigRepository: ApiConfigRepository,
+    private val aiApiClient: AiApiClient = AiApiClient()
+) : ViewModel() {
     private val _selectedProvider = MutableStateFlow(AiProvider.GEMINI)
     val selectedProvider: StateFlow<AiProvider> = _selectedProvider.asStateFlow()
 
@@ -78,6 +83,23 @@ class SettingsViewModel(private val apiConfigRepository: ApiConfigRepository) : 
                 timeoutSec = 30
             )
             _saveStatus.value = "Configurações para ${provider.displayName} salvas com criptografia Keystore!"
+        }
+    }
+
+    fun testConnection() {
+        viewModelScope.launch {
+            _saveStatus.value = "Testando conexão com ${_selectedProvider.value.displayName}..."
+            val response = aiApiClient.sendMessage(
+                messages = listOf("user" to "Hello, respond with OK if connection is working!"),
+                options = AiRequestOptions(
+                    provider = _selectedProvider.value,
+                    model = _modelName.value,
+                    apiKey = _apiKey.value,
+                    baseUrl = _baseUrl.value,
+                    maxTokens = 100
+                )
+            )
+            _saveStatus.value = "Resultado do teste: $response"
         }
     }
 }

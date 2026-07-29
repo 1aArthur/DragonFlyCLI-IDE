@@ -7,7 +7,8 @@ enum class AiProvider(
     val requiresApiKey: Boolean = true
 ) {
     GEMINI("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/", "gemini-2.5-flash"),
-    OPENAI("OpenAI", "https://api.openai.com/v1/", "gpt-4o"),
+    OPENAI("OpenAI (Oficial)", "https://api.openai.com/v1/", "gpt-4o"),
+    CUSTOM_OPENAI("Custom OpenAI API (vLLM / Proxy)", "https://api.openai.com/v1/", "gpt-4o"),
     CLAUDE("Anthropic Claude", "https://api.anthropic.com/v1/", "claude-3-7-sonnet"),
     DEEPSEEK("DeepSeek", "https://api.deepseek.com/v1/", "deepseek-chat"),
     OPENROUTER("OpenRouter", "https://openrouter.ai/api/v1/", "anthropic/claude-3.5-sonnet"),
@@ -29,6 +30,10 @@ data class AiModel(
             AiModel("gemini-2.5-pro", "Gemini 2.5 Pro", AiProvider.GEMINI, "Reasoning & complex coding model"),
             AiModel("gpt-4o", "GPT-4o", AiProvider.OPENAI, "OpenAI flagship model"),
             AiModel("gpt-4o-mini", "GPT-4o Mini", AiProvider.OPENAI, "Fast lightweight model"),
+            AiModel("o3-mini", "OpenAI o3-mini", AiProvider.OPENAI, "Reasoning model"),
+            AiModel("gpt-4o", "Custom GPT-4o", AiProvider.CUSTOM_OPENAI, "Custom OpenAI Endpoint GPT-4o"),
+            AiModel("gpt-4o-mini", "Custom GPT-4o Mini", AiProvider.CUSTOM_OPENAI, "Custom OpenAI Endpoint Mini"),
+            AiModel("custom-model", "Custom Model Identifier", AiProvider.CUSTOM_OPENAI, "User-defined proxy model"),
             AiModel("claude-3-7-sonnet", "Claude 3.7 Sonnet", AiProvider.CLAUDE, "Hybrid reasoning & coding state of the art"),
             AiModel("claude-3-5-haiku", "Claude 3.5 Haiku", AiProvider.CLAUDE, "Ultra fast response model"),
             AiModel("deepseek-chat", "DeepSeek V3", AiProvider.DEEPSEEK, "High performance open weights powerhouse"),

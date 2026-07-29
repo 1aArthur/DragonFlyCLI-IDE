@@ -174,14 +174,28 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             Text(saveStatus, fontSize = 12.sp, color = TerminalGreen)
         }
 
-        Button(
-            onClick = { viewModel.saveConfig() },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(Icons.Default.Save, null, tint = BlackHoleBackground, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Salvar Configurações Criptografadas", color = BlackHoleBackground, fontSize = 13.sp)
+            Button(
+                onClick = { viewModel.testConnection() },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = DarkSurface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TerminalYellow)
+            ) {
+                Text("Testar Conexão", color = TerminalYellow, fontSize = 12.sp)
+            }
+
+            Button(
+                onClick = { viewModel.saveConfig() },
+                modifier = Modifier.weight(1.2f),
+                colors = ButtonDefaults.buttonColors(containerColor = GlowCyan)
+            ) {
+                Icon(Icons.Default.Save, null, tint = BlackHoleBackground, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Salvar No Keystore", color = BlackHoleBackground, fontSize = 12.sp)
+            }
         }
     }
 }
